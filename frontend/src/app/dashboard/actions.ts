@@ -1,0 +1,79 @@
+"use server";
+
+import { createClient } from "@/supabase/server";
+import { redirect } from "next/navigation";
+import { generateInviteCode } from "@/utils";
+
+export async function createSession(formData: FormData) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect("/");
+
+  const title = formData.get("title") as string || "Poker Night";
+  const buyInDefault = parseFloat(formData.get("buyInDefault") as string) || null;
+
+  const invite_code = generateInviteCode();
+
+  const { data: session, error } = await supabase
+    .from("sessions")
+    .insert({
+      host_user_id: user.id,
+      title,
+      buy_in_default: buyInDefault,
+      invite_code,
+    })
+    .select()
+    .single();
+
+  if (error) throw new Error(error.message);
+
+  // Add host as member
+  await supabase.from("session_members").insert({
+    session_id: session.id,
+    user_id: user.id,
+    role: "host",
+  });
+
+  redirect(`/session/${session.id}`);
+}
+
+export async function joinSession(formData: FormData) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect("/");
+
+  const code = (formData.get("code") as string).toUpperCase().trim();
+
+  const { data: session, error } = await supabase
+    .from("sessions")
+    .select("id, state")
+    .eq("invite_code", code)
+    .single();
+
+  if (error || !session) throw new Error("Session not found");
+  if (session.state !== "lobby") throw new Error("Session already started");
+
+  // Check if already a member
+  const { data: existing } = await supabase
+    .from("session_members")
+    .select("user_id")
+    .eq("session_id", session.id)
+    .eq("user_id", user.id)
+    .single();
+
+  if (!existing) {
+    await supabase.from("session_members").insert({
+      session_id: session.id,
+      user_id: user.id,
+      role: "player",
+    });
+  }
+
+  redirect(`/session/${session.id}`);
+}
+
+export async function signOut() {
+  const supabase = await createClient();
+  await supabase.auth.signOut();
+  redirect("/");
+}
