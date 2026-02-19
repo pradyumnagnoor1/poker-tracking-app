@@ -33,7 +33,7 @@ export async function createSession(formData: FormData) {
         role: "host",
     });
 
-    redirect(`/session/${session.id}`);
+    redirect(`/sessions/${session.id}`);
 }
 
 export async function joinSession(formData: FormData) {
@@ -67,7 +67,7 @@ export async function joinSession(formData: FormData) {
         });
     }
 
-    redirect(`/session/${session.id}`);
+    redirect(`/sessions/${session.id}`);
 }
 
 export async function signOut() {
