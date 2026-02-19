@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createClient } from "@/supabase/client";
 
 type Player = {
@@ -24,7 +24,11 @@ export default function LobbyView({
     const supabase = createClient();
     const [players, setPlayers] = useState<Player[]>([]);
     const [buyInAmount, setBuyInAmount] = useState(buyInDefault?.toString() || "");
+    const [saving, setSaving] = useState(false);
+    const [saved, setSaved] = useState(false);
+    const [starting, setStarting] = useState(false);
     const [loading, setLoading] = useState(true);
+    const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     const fetchPlayers = useCallback(async () => {
         const { data: members } = await supabase
@@ -55,6 +59,7 @@ export default function LobbyView({
     }, [supabase, sessionId]);
 
     useEffect(() => {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         fetchPlayers();
 
         const channel = supabase
@@ -68,12 +73,20 @@ export default function LobbyView({
 
     const myBuyIn = players.find((p) => p.user_id === userId)?.buy_in;
 
-    const handleBuyIn = async () => {
+    const flashSaved = () => {
+        setSaved(true);
+        if (savedTimerRef.current) clearTimeout(savedTimerRef.current);
+        savedTimerRef.current = setTimeout(() => setSaved(false), 2000);
+    };
+
+    const saveBuyIn = async () => {
         const amount = parseFloat(buyInAmount);
         if (!amount || amount <= 0) return;
+        setSaving(true);
+
+        let error = null;
 
         if (myBuyIn !== null) {
-            // Update existing
             const { data: existing } = await supabase
                 .from("buyins")
                 .select("id")
@@ -83,16 +96,29 @@ export default function LobbyView({
                 .single();
 
             if (existing) {
-                await supabase.from("buyins").update({ amount }).eq("id", existing.id);
+                const res = await supabase.from("buyins").update({ amount }).eq("id", existing.id);
+                error = res.error;
             }
         } else {
-            await supabase.from("buyins").insert({
+            const res = await supabase.from("buyins").insert({
                 session_id: sessionId,
                 user_id: userId,
                 amount,
                 type: "initial",
             });
+            error = res.error;
         }
+
+        setSaving(false);
+        if (error) {
+            alert(`Failed to save buy-in: ${error.message}`);
+        } else {
+            flashSaved();
+        }
+    };
+
+    const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+        if (e.key === "Enter") saveBuyIn();
     };
 
     const handleStartGame = async () => {
@@ -104,7 +130,13 @@ export default function LobbyView({
             if (!proceed) return;
         }
 
-        await supabase.from("sessions").update({ state: "active", start_time: new Date().toISOString() }).eq("id", sessionId);
+        setStarting(true);
+        const { error } = await supabase.rpc("start_game", { p_session_id: sessionId });
+        if (error) {
+            alert(`Could not start game: ${error.message}`);
+            setStarting(false);
+            return;
+        }
         window.location.reload();
     };
 
@@ -122,25 +154,35 @@ export default function LobbyView({
         <div>
             {/* Buy-in input */}
             <div className="bg-gray-900 rounded-xl p-4 mb-4">
-                <h2 className="font-semibold mb-2">Your Buy-In</h2>
+                <h2 className="font-semibold mb-1">Your Buy-In</h2>
+                <p className="text-gray-500 text-xs mb-3">
+                    Set your initial buy-in amount.
+                </p>
                 <div className="flex gap-2">
                     <input
                         type="number"
                         value={buyInAmount}
                         onChange={(e) => setBuyInAmount(e.target.value)}
+                        onKeyDown={handleKeyDown}
                         placeholder="Amount"
                         className="flex-1 bg-gray-800 rounded-lg px-3 py-2 text-sm"
                     />
                     <button
-                        onClick={handleBuyIn}
-                        className="bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-4 rounded-lg text-sm"
+                        onClick={saveBuyIn}
+                        disabled={saving}
+                        className="bg-green-600 hover:bg-green-700 disabled:opacity-60 text-white font-semibold py-2 px-4 rounded-lg text-sm"
                     >
-                        {myBuyIn !== null ? "Update" : "Set"}
+                        {saving ? "Saving..." : myBuyIn !== null ? "Update" : "Set"}
                     </button>
                 </div>
-                {myBuyIn !== null && (
-                    <p className="text-green-400 text-xs mt-1">Current: ${myBuyIn}</p>
-                )}
+                <div className="mt-1.5 h-4">
+                    {saved && (
+                        <p className="text-green-400 text-xs">Saved ✓</p>
+                    )}
+                    {myBuyIn !== null && !saved && (
+                        <p className="text-gray-500 text-xs">Current: ${myBuyIn}</p>
+                    )}
+                </div>
             </div>
 
             {/* Player list */}
@@ -186,9 +228,10 @@ export default function LobbyView({
                     {isHost && (
                         <button
                             onClick={handleStartGame}
-                            className="bg-green-600 hover:bg-green-700 text-white font-semibold py-3 rounded-xl w-full"
+                            disabled={starting}
+                            className="bg-green-600 hover:bg-green-700 disabled:opacity-60 text-white font-semibold py-3 rounded-xl w-full transition-colors"
                         >
-                            Start Game
+                            {starting ? "Starting..." : "Start Game"}
                         </button>
                     )}
                 </div>

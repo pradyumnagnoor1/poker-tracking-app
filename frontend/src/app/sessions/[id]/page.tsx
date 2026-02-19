@@ -4,6 +4,7 @@ import LobbyView from "./lobby";
 import GameView from "./game";
 import ChipCountView from "./chip-count";
 import PayoutsView from "./payouts";
+import InviteCodeButton from "./InviteCodeButton";
 
 export default async function SessionPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -37,7 +38,7 @@ export default async function SessionPage({ params }: { params: Promise<{ id: st
       <div className="flex justify-between items-center mb-4">
         <div>
           <h1 className="text-xl font-bold">{session.title}</h1>
-          <p className="text-gray-500 text-xs">Code: {session.invite_code}</p>
+          <InviteCodeButton code={session.invite_code} />
         </div>
         <a href="/dashboard" className="text-gray-500 text-sm hover:text-white">← Back</a>
       </div>

@@ -2,6 +2,7 @@
 
 import { createClient } from "@/supabase/server";
 import { redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
 import { generateInviteCode } from "@/utils";
 
 export async function createSession(formData: FormData) {
@@ -68,6 +69,17 @@ export async function joinSession(formData: FormData) {
     }
 
     redirect(`/sessions/${session.id}`);
+}
+
+export async function deleteSession(sessionId: string) {
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) redirect("/");
+
+    const { error } = await supabase.rpc("delete_session", { p_session_id: sessionId });
+
+    if (error) throw new Error(error.message);
+    revalidatePath("/dashboard");
 }
 
 export async function signOut() {
