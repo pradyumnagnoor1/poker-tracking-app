@@ -3,6 +3,18 @@ import { redirect } from "next/navigation";
 import { createSession, joinSession, signOut } from "./actions";
 import Link from "next/link";
 
+type Membership = {
+  session_id: string;
+  role: string;
+  sessions: {
+    id: string;
+    title: string;
+    state: string;
+    invite_code: string;
+    created_at: string;
+  };
+};
+
 export default async function Dashboard() {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -14,7 +26,7 @@ export default async function Dashboard() {
     .eq("user_id", user.id)
     .order("joined_at", { ascending: false });
 
-  const sessions = memberships?.map((m: any) => ({
+  const sessions = (memberships as Membership[] | null)?.map((m) => ({
     ...m.sessions,
     role: m.role,
   })) || [];
@@ -74,10 +86,10 @@ export default async function Dashboard() {
           <p className="text-gray-500 text-sm">No sessions yet.</p>
         ) : (
           <div className="flex flex-col gap-2">
-            {sessions.map((s: any) => (
+            {sessions.map((s) => (
               <Link
                 key={s.id}
-                href={`/session/${s.id}`}
+                href={`/sessions/${s.id}`}
                 className="bg-gray-900 rounded-xl p-4 flex justify-between items-center hover:bg-gray-800"
               >
                 <div>
