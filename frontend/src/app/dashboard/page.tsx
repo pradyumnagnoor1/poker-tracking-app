@@ -1,7 +1,9 @@
 import { createClient } from "@/supabase/server";
 import { redirect } from "next/navigation";
 import { createSession, joinSession, signOut } from "./actions";
-import Link from "next/link";
+import DemoBanner from "./DemoBanner";
+import SessionList from "./SessionList";
+import StatsChart from "./StatsChart";
 
 type Membership = {
   session_id: string;
@@ -13,6 +15,14 @@ type Membership = {
     invite_code: string;
     created_at: string;
   };
+};
+
+type SessionStat = {
+  id: string;
+  title: string;
+  date: string;
+  profit: number;
+  cumulative: number;
 };
 
 export default async function Dashboard() {
@@ -31,17 +41,74 @@ export default async function Dashboard() {
     role: m.role,
   })) || [];
 
+  const isAnonymous = user.is_anonymous === true;
+
+  // Compute stats for completed sessions (payouts or closed)
+  const completedSessions = sessions.filter(
+    (s) => s.state === "payouts" || s.state === "closed"
+  );
+
+  let sessionStats: SessionStat[] = [];
+
+  if (completedSessions.length > 0) {
+    const completedIds = completedSessions.map((s) => s.id);
+
+    const [{ data: userBuyins }, { data: userChipCounts }] = await Promise.all([
+      supabase
+        .from("buyins")
+        .select("session_id, amount")
+        .eq("user_id", user.id)
+        .in("session_id", completedIds),
+      supabase
+        .from("chip_counts")
+        .select("session_id, final_stack")
+        .eq("user_id", user.id)
+        .in("session_id", completedIds),
+    ]);
+
+    const statsRaw = completedSessions
+      .map((s) => {
+        const chipCount = (userChipCounts ?? []).find((c) => c.session_id === s.id);
+        if (!chipCount) return null;
+
+        const totalIn = (userBuyins ?? [])
+          .filter((b) => b.session_id === s.id)
+          .reduce((sum, b) => sum + b.amount, 0);
+
+        return {
+          id: s.id,
+          title: s.title,
+          date: s.created_at,
+          profit: Math.round((Number(chipCount.final_stack) - totalIn) * 100) / 100,
+        };
+      })
+      .filter(Boolean) as Omit<SessionStat, "cumulative">[];
+
+    statsRaw.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+    let running = 0;
+    sessionStats = statsRaw.map((s) => {
+      running = Math.round((running + s.profit) * 100) / 100;
+      return { ...s, cumulative: running };
+    });
+  }
+
   return (
     <main className="min-h-screen px-4 py-6 max-w-lg mx-auto">
+      {isAnonymous && <DemoBanner />}
       <div className="flex justify-between items-center mb-6">
         <div>
           <h1 className="text-2xl font-bold">Poker Tracker</h1>
-          <p className="text-gray-400 text-sm">{user.user_metadata.full_name}</p>
+          <p className="text-gray-400 text-sm">
+            {isAnonymous ? "Demo User" : user.user_metadata.full_name}
+          </p>
         </div>
         <form action={signOut}>
           <button className="text-gray-500 text-sm hover:text-white">Sign Out</button>
         </form>
       </div>
+
+      {sessionStats.length > 0 && <StatsChart stats={sessionStats} />}
 
       <form action={createSession} className="bg-gray-900 rounded-xl p-4 mb-4">
         <h2 className="font-semibold mb-3">Create Session</h2>
@@ -82,27 +149,7 @@ export default async function Dashboard() {
 
       <div>
         <h2 className="font-semibold mb-3">Your Sessions</h2>
-        {sessions.length === 0 ? (
-          <p className="text-gray-500 text-sm">No sessions yet.</p>
-        ) : (
-          <div className="flex flex-col gap-2">
-            {sessions.map((s) => (
-              <Link
-                key={s.id}
-                href={`/sessions/${s.id}`}
-                className="bg-gray-900 rounded-xl p-4 flex justify-between items-center hover:bg-gray-800"
-              >
-                <div>
-                  <p className="font-medium">{s.title}</p>
-                  <p className="text-gray-500 text-xs">
-                    {s.role === "host" ? "Host" : "Player"} · {s.state}
-                  </p>
-                </div>
-                <span className="text-gray-600 text-xs">{s.invite_code}</span>
-              </Link>
-            ))}
-          </div>
-        )}
+        <SessionList sessions={sessions} />
       </div>
     </main>
   );
