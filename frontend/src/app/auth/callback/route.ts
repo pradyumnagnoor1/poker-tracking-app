@@ -8,8 +8,13 @@ export async function GET(request: Request) {
 
   if (code) {
     const supabase = await createClient();
-    const { error } = await supabase.auth.exchangeCodeForSession(code);
-    if (!error) {
+    const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+    if (!error && data.user) {
+      // Ensure profile row exists (trigger handles new users, this covers edge cases)
+      await supabase.from("profiles").upsert({
+        id: data.user.id,
+        display_name: data.user.user_metadata?.full_name ?? data.user.email ?? "Player",
+      }, { onConflict: "id" });
       return NextResponse.redirect(`${origin}${next}`);
     }
   }
