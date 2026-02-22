@@ -98,7 +98,7 @@ export default async function Dashboard() {
       {isAnonymous && <DemoBanner />}
       <div className="flex justify-between items-center mb-6">
         <div>
-          <h1 className="text-2xl font-bold">Poker Tracker</h1>
+          <h1 className="text-2xl font-bold">Stack<span className="text-green-400">Lab</span></h1>
           <p className="text-gray-400 text-sm">
             {isAnonymous ? "Demo User" : user.user_metadata.full_name}
           </p>
