@@ -1,9 +1,6 @@
 import { createClient } from "@/supabase/server";
 import { redirect } from "next/navigation";
-import { createSession, joinSession, signOut } from "./actions";
-import DemoBanner from "./DemoBanner";
-import SessionList from "./SessionList";
-import StatsChart from "./StatsChart";
+import DashboardClient from "./DashboardClient";
 
 type Membership = {
   session_id: string;
@@ -43,7 +40,6 @@ export default async function Dashboard() {
 
   const isAnonymous = user.is_anonymous === true;
 
-  // Compute stats for completed sessions (payouts or closed)
   const completedSessions = sessions.filter(
     (s) => s.state === "payouts" || s.state === "closed"
   );
@@ -94,63 +90,11 @@ export default async function Dashboard() {
   }
 
   return (
-    <main className="min-h-screen px-4 py-6 max-w-lg mx-auto">
-      {isAnonymous && <DemoBanner />}
-      <div className="flex justify-between items-center mb-6">
-        <div>
-          <h1 className="text-2xl font-bold">Stack<span className="text-green-400">Lab</span></h1>
-          <p className="text-gray-400 text-sm">
-            {isAnonymous ? "Demo User" : user.user_metadata.full_name}
-          </p>
-        </div>
-        <form action={signOut}>
-          <button className="text-gray-500 text-sm hover:text-white">Sign Out</button>
-        </form>
-      </div>
-
-      {sessionStats.length > 0 && <StatsChart stats={sessionStats} />}
-
-      <form action={createSession} className="bg-gray-900 rounded-xl p-4 mb-4">
-        <h2 className="font-semibold mb-3">Create Session</h2>
-        <input
-          name="title"
-          placeholder="Session name (e.g. Friday Night)"
-          className="w-full bg-gray-800 rounded-lg px-3 py-2 mb-2 text-sm placeholder-gray-500"
-        />
-        <input
-          name="buyInDefault"
-          type="number"
-          placeholder="Default buy-in amount"
-          className="w-full bg-gray-800 rounded-lg px-3 py-2 mb-3 text-sm placeholder-gray-500"
-        />
-        <button
-          type="submit"
-          className="bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-4 rounded-lg w-full text-sm"
-        >
-          Create Game
-        </button>
-      </form>
-
-      <form action={joinSession} className="bg-gray-900 rounded-xl p-4 mb-6">
-        <h2 className="font-semibold mb-3">Join Session</h2>
-        <input
-          name="code"
-          placeholder="Enter invite code"
-          maxLength={6}
-          className="w-full bg-gray-800 rounded-lg px-3 py-2 mb-3 text-sm placeholder-gray-500 uppercase tracking-widest text-center"
-        />
-        <button
-          type="submit"
-          className="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-lg w-full text-sm"
-        >
-          Join Game
-        </button>
-      </form>
-
-      <div>
-        <h2 className="font-semibold mb-3">Your Sessions</h2>
-        <SessionList sessions={sessions} />
-      </div>
-    </main>
+    <DashboardClient
+      fullName={user.user_metadata?.full_name ?? "Player"}
+      sessions={sessions}
+      sessionStats={sessionStats}
+      isAnonymous={isAnonymous}
+    />
   );
 }
