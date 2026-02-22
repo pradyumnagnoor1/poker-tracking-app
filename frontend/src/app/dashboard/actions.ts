@@ -10,6 +10,12 @@ export async function createSession(formData: FormData) {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) redirect("/");
 
+    // Ensure profile exists (first-time Google sign-in may not have one yet)
+    await supabase.from("profiles").upsert({
+        id: user.id,
+        display_name: user.user_metadata?.full_name ?? user.email ?? "Player",
+    }, { onConflict: "id" });
+
     const title = formData.get("title") as string || "Poker Night";
     const buyInDefault = parseFloat(formData.get("buyInDefault") as string) || null;
 
@@ -41,6 +47,12 @@ export async function joinSession(formData: FormData) {
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) redirect("/");
+
+    // Ensure profile exists before joining
+    await supabase.from("profiles").upsert({
+        id: user.id,
+        display_name: user.user_metadata?.full_name ?? user.email ?? "Player",
+    }, { onConflict: "id" });
 
     const code = (formData.get("code") as string).toUpperCase().trim();
 
