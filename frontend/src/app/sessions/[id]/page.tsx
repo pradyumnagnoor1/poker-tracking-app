@@ -20,7 +20,6 @@ export default async function SessionPage({ params }: { params: Promise<{ id: st
 
   if (!session) redirect("/dashboard");
 
-  // Check membership
   const { data: member } = await supabase
     .from("session_members")
     .select("role")
@@ -31,6 +30,20 @@ export default async function SessionPage({ params }: { params: Promise<{ id: st
   if (!member) redirect("/dashboard");
 
   const isHost = member.role === "host";
+
+  // Lobby has its own full-page layout
+  if (session.state === "lobby") {
+    return (
+      <LobbyView
+        sessionId={id}
+        userId={user.id}
+        isHost={isHost}
+        buyInDefault={session.buy_in_default}
+        inviteCode={session.invite_code}
+        sessionTitle={session.title}
+      />
+    );
+  }
 
   return (
     <main className="min-h-screen px-4 py-6 max-w-lg mx-auto">
@@ -43,9 +56,6 @@ export default async function SessionPage({ params }: { params: Promise<{ id: st
         <a href="/dashboard" className="text-gray-500 text-sm hover:text-white">← Back</a>
       </div>
 
-      {session.state === "lobby" && (
-        <LobbyView sessionId={id} userId={user.id} isHost={isHost} buyInDefault={session.buy_in_default} />
-      )}
       {session.state === "active" && (
         <GameView sessionId={id} userId={user.id} isHost={isHost} />
       )}
