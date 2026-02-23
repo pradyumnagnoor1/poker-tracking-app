@@ -66,13 +66,20 @@ export default function LobbyView({
     useEffect(() => {
         fetchPlayers();
 
+        // Realtime subscription for instant updates
         const channel = supabase
             .channel(`lobby-${sessionId}`)
             .on("postgres_changes", { event: "*", schema: "public", table: "session_members", filter: `session_id=eq.${sessionId}` }, () => fetchPlayers())
             .on("postgres_changes", { event: "*", schema: "public", table: "buyins", filter: `session_id=eq.${sessionId}` }, () => fetchPlayers())
             .subscribe();
 
-        return () => { supabase.removeChannel(channel); };
+        // Polling fallback — ensures host sees new players even if Realtime is delayed
+        const poll = setInterval(fetchPlayers, 3000);
+
+        return () => {
+            supabase.removeChannel(channel);
+            clearInterval(poll);
+        };
     }, [fetchPlayers, supabase, sessionId]);
 
     const myBuyIn = players.find((p) => p.user_id === userId)?.buy_in;
