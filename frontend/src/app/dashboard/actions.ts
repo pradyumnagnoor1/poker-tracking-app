@@ -56,31 +56,12 @@ export async function joinSession(formData: FormData) {
 
     const code = (formData.get("code") as string).toUpperCase().trim();
 
-    const { data: session, error } = await supabase
-        .from("sessions")
-        .select("id, state")
-        .eq("invite_code", code)
-        .single();
+    // Use SECURITY DEFINER RPC to bypass RLS (joining user is not yet a member)
+    const { data: sessionId, error } = await supabase.rpc("join_by_code", { p_code: code });
 
-    if (error || !session) throw new Error("Session not found");
-    if (session.state !== "lobby") throw new Error("Session already started");
+    if (error) throw new Error(error.message);
 
-    const { data: existing } = await supabase
-        .from("session_members")
-        .select("user_id")
-        .eq("session_id", session.id)
-        .eq("user_id", user.id)
-        .single();
-
-    if (!existing) {
-        await supabase.from("session_members").insert({
-            session_id: session.id,
-            user_id: user.id,
-            role: "player",
-        });
-    }
-
-    redirect(`/sessions/${session.id}`);
+    redirect(`/sessions/${sessionId}`);
 }
 
 export async function deleteSession(sessionId: string) {

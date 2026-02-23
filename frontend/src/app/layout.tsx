@@ -1,16 +1,9 @@
-import type { Metadata, Viewport } from "next";
+import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Poker Tracker",
-  description: "Track your poker sessions with friends",
-};
-
-export const viewport: Viewport = {
-  width: "device-width",
-  initialScale: 1,
-  maximumScale: 1,
-  userScalable: false,
+  title: "StackLab",
+  description: "The easiest way to run your home poker game.",
 };
 
 export default function RootLayout({
@@ -20,9 +13,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className="bg-gray-950 text-white min-h-screen">
-        {children}
-      </body>
+      <body className="bg-gray-950 text-white antialiased">{children}</body>
     </html>
   );
 }
