@@ -339,7 +339,7 @@ export default function GameView({
                                 <div>
                                     <p className="font-medium text-sm">
                                         {p.display_name}
-                                        {p.role === "host" && <span className="text-yellow-500 text-xs ml-1">👑</span>}
+                                        {p.role === "host" && <span className="ml-1.5 text-xs font-semibold text-amber-500 bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded">Host</span>}
                                         {p.participant_type === "guest" && (
                                             <span className="text-blue-400 text-xs ml-2">Guest</span>
                                         )}

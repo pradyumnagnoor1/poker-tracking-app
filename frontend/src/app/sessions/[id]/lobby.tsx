@@ -269,7 +269,7 @@ export default function LobbyView({
                                         <p className="font-medium text-sm truncate">
                                             {p.display_name}
                                             {p.role === "host" && (
-                                                <span className="ml-1 text-yellow-500">👑</span>
+                                                <span className="ml-1.5 text-xs font-semibold text-amber-500 bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded">Host</span>
                                             )}
                                         </p>
                                         <p className={`text-xs mt-0.5 ${p.buy_in !== null ? "text-green-400" : "text-gray-600"}`}>
