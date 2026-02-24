@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- Dark rounded background -->
+  <rect width="32" height="32" rx="8" fill="#111827"/>
+  <!-- Outer chip ring -->
+  <circle cx="16" cy="16" r="12" fill="none" stroke="#22c55e" stroke-width="2.5"/>
+  <!-- Chip notches (top, bottom, left, right) -->
+  <rect x="14.5" y="3" width="3" height="3.5" rx="0.75" fill="#22c55e"/>
+  <rect x="14.5" y="25.5" width="3" height="3.5" rx="0.75" fill="#22c55e"/>
+  <rect x="3" y="14.5" width="3.5" height="3" rx="0.75" fill="#22c55e"/>
+  <rect x="25.5" y="14.5" width="3.5" height="3" rx="0.75" fill="#22c55e"/>
+  <!-- Inner chip fill -->
+  <circle cx="16" cy="16" r="7.5" fill="#22c55e"/>
+  <!-- $ symbol -->
+  <text x="16" y="20.5" font-family="ui-monospace,monospace" font-weight="800" font-size="11" text-anchor="middle" fill="#111827">$</text>
+</svg>
