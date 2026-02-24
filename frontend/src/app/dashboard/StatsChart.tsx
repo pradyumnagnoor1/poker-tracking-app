@@ -117,7 +117,7 @@ export default function StatsChart({ stats }: { stats: SessionStat[] }) {
                             contentStyle={{ background: "#111827", border: "1px solid #374151", borderRadius: 8 }}
                             labelFormatter={(label) => shortDate(label)}
                             labelStyle={{ color: "#9ca3af", fontSize: 12 }}
-                            formatter={(value: number) => [formatMoney(value), "Cumulative P/L"]}
+                            formatter={(value: number | undefined) => [formatMoney(value ?? 0), "Cumulative P/L"]}
                         />
                         <ReferenceLine y={0} stroke="#4b5563" strokeDasharray="4 4" />
                         <Line
@@ -151,7 +151,7 @@ export default function StatsChart({ stats }: { stats: SessionStat[] }) {
                         <Tooltip
                             contentStyle={{ background: "#111827", border: "1px solid #374151", borderRadius: 8 }}
                             labelStyle={{ color: "#9ca3af", fontSize: 12 }}
-                            formatter={(value: number) => [formatMoney(value), "Profit / Loss"]}
+                            formatter={(value: number | undefined) => [formatMoney(value ?? 0), "Profit / Loss"]}
                         />
                         <ReferenceLine y={0} stroke="#4b5563" />
                         <Bar dataKey="profit" radius={[3, 3, 0, 0]}>
