@@ -33,6 +33,8 @@ export default function LobbyView({
     const [starting, setStarting] = useState(false);
     const [loading, setLoading] = useState(true);
     const [copied, setCopied] = useState(false);
+    const [confirmRemoveId, setConfirmRemoveId] = useState<string | null>(null);
+    const [missingBuyInWarning, setMissingBuyInWarning] = useState<string | null>(null);
     const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     const fetchPlayers = useCallback(async () => {
@@ -148,12 +150,16 @@ export default function LobbyView({
     const handleStartGame = async () => {
         const playersWithoutBuyIn = players.filter((p) => p.buy_in === null);
         if (playersWithoutBuyIn.length > 0) {
-            const proceed = confirm(
-                `${playersWithoutBuyIn.map((p) => p.display_name).join(", ")} haven't entered buy-ins. Start anyway?`
+            setMissingBuyInWarning(
+                `${playersWithoutBuyIn.map((p) => p.display_name).join(", ")} haven't set buy-ins.`
             );
-            if (!proceed) return;
+            return;
         }
+        await doStartGame();
+    };
 
+    const doStartGame = async () => {
+        setMissingBuyInWarning(null);
         setStarting(true);
         const { error } = await supabase.rpc("start_game", { p_session_id: sessionId });
         if (error) {
@@ -165,7 +171,11 @@ export default function LobbyView({
     };
 
     const handleRemovePlayer = async (playerId: string) => {
-        if (!confirm("Remove this player?")) return;
+        if (confirmRemoveId !== playerId) {
+            setConfirmRemoveId(playerId);
+            return;
+        }
+        setConfirmRemoveId(null);
         await supabase.from("session_members").delete().eq("session_id", sessionId).eq("user_id", playerId);
         await supabase.from("buyins").delete().eq("session_id", sessionId).eq("user_id", playerId);
     };
@@ -289,12 +299,19 @@ export default function LobbyView({
                                 </div>
 
                                 {isHost && p.user_id !== userId && (
-                                    <button
-                                        onClick={() => handleRemovePlayer(p.user_id)}
-                                        className="absolute top-1 right-1 text-gray-700 hover:text-red-500 text-xs w-5 h-5 flex items-center justify-center rounded transition-colors"
-                                    >
-                                        ✕
-                                    </button>
+                                    confirmRemoveId === p.user_id ? (
+                                        <div className="absolute top-1 right-1 flex gap-1">
+                                            <button onClick={() => handleRemovePlayer(p.user_id)} className="text-xs bg-red-600 hover:bg-red-500 text-white px-1.5 py-0.5 rounded font-semibold">Remove</button>
+                                            <button onClick={() => setConfirmRemoveId(null)} className="text-xs bg-gray-700 hover:bg-gray-600 text-gray-300 px-1.5 py-0.5 rounded">Cancel</button>
+                                        </div>
+                                    ) : (
+                                        <button
+                                            onClick={() => handleRemovePlayer(p.user_id)}
+                                            className="absolute top-1 right-1 text-gray-700 hover:text-red-500 text-xs w-5 h-5 flex items-center justify-center rounded transition-colors"
+                                        >
+                                            ✕
+                                        </button>
+                                    )
                                 )}
                             </div>
                         ))}
@@ -327,17 +344,34 @@ export default function LobbyView({
                     </div>
 
                     {isHost ? (
-                        <button
-                            onClick={handleStartGame}
-                            disabled={starting || players.length < 2}
-                            className={`w-full font-bold py-3.5 rounded-xl transition-all text-base ${
-                                allReady
-                                    ? "bg-green-500 hover:bg-green-400 text-black shadow-lg shadow-green-500/20"
-                                    : "bg-gray-800 hover:bg-gray-700 text-white disabled:opacity-40"
-                            } disabled:cursor-not-allowed`}
-                        >
-                            {starting ? "Starting..." : players.length < 2 ? "Need at least 2 players" : "Start Game →"}
-                        </button>
+                        <div className="space-y-2">
+                            {missingBuyInWarning && (
+                                <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-xl px-4 py-3">
+                                    <p className="text-yellow-400 text-xs mb-2">{missingBuyInWarning} Start anyway?</p>
+                                    <div className="flex gap-2">
+                                        <button onClick={doStartGame} className="flex-1 bg-yellow-500 hover:bg-yellow-400 text-black font-bold py-2 rounded-lg text-sm">
+                                            Start Anyway
+                                        </button>
+                                        <button onClick={() => setMissingBuyInWarning(null)} className="flex-1 bg-gray-700 hover:bg-gray-600 text-white font-semibold py-2 rounded-lg text-sm">
+                                            Cancel
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+                            {!missingBuyInWarning && (
+                                <button
+                                    onClick={handleStartGame}
+                                    disabled={starting || players.length < 2}
+                                    className={`w-full font-bold py-3.5 rounded-xl transition-all text-base ${
+                                        allReady
+                                            ? "bg-green-500 hover:bg-green-400 text-black shadow-lg shadow-green-500/20"
+                                            : "bg-gray-800 hover:bg-gray-700 text-white disabled:opacity-40"
+                                    } disabled:cursor-not-allowed`}
+                                >
+                                    {starting ? "Starting..." : players.length < 2 ? "Need at least 2 players" : "Start Game →"}
+                                </button>
+                            )}
+                        </div>
                     ) : (
                         <div className="w-full bg-gray-900 border border-gray-800 rounded-xl py-3.5 text-center">
                             <p className="text-gray-500 text-sm">Waiting for host to start the game...</p>

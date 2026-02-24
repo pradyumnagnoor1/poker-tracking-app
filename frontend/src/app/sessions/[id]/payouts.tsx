@@ -87,6 +87,7 @@ export default function PayoutsView({
     const [localSettled, setLocalSettled] = useState<Set<number>>(new Set());
     const [loading, setLoading] = useState(true);
     const [closing, setClosing] = useState(false);
+    const [confirmClose, setConfirmClose] = useState(false);
 
     const fetchPayouts = useCallback(async () => {
         const { data: members } = await supabase
@@ -256,7 +257,11 @@ export default function PayoutsView({
     };
 
     const handleCloseSession = async () => {
-        if (!confirm("Mark this session as closed? This cannot be undone.")) return;
+        if (!confirmClose) {
+            setConfirmClose(true);
+            return;
+        }
+        setConfirmClose(false);
         setClosing(true);
         const { error } = await supabase.rpc("close_session", { p_session_id: sessionId });
         if (error) {
@@ -497,13 +502,27 @@ export default function PayoutsView({
             {isHost && !isClosed && (
                 <div className="fixed bottom-0 left-0 right-0 bg-gray-950 border-t border-gray-800 p-4">
                     <div className="max-w-lg mx-auto">
-                        <button
-                            onClick={handleCloseSession}
-                            disabled={closing}
-                            className="bg-gray-700 hover:bg-gray-600 disabled:opacity-50 text-white font-semibold py-3 rounded-xl w-full transition-colors"
-                        >
-                            {closing ? "Closing..." : "Close Session"}
-                        </button>
+                        {confirmClose ? (
+                            <div className="space-y-2">
+                                <p className="text-center text-sm text-gray-400">Close this session? This cannot be undone.</p>
+                                <div className="flex gap-2">
+                                    <button onClick={handleCloseSession} disabled={closing} className="flex-1 bg-gray-600 hover:bg-gray-500 disabled:opacity-50 text-white font-bold py-3 rounded-xl">
+                                        {closing ? "Closing..." : "Confirm"}
+                                    </button>
+                                    <button onClick={() => setConfirmClose(false)} className="flex-1 bg-gray-800 hover:bg-gray-700 text-white font-semibold py-3 rounded-xl">
+                                        Cancel
+                                    </button>
+                                </div>
+                            </div>
+                        ) : (
+                            <button
+                                onClick={handleCloseSession}
+                                disabled={closing}
+                                className="bg-gray-700 hover:bg-gray-600 disabled:opacity-50 text-white font-semibold py-3 rounded-xl w-full transition-colors"
+                            >
+                                Close Session
+                            </button>
+                        )}
                     </div>
                 </div>
             )}

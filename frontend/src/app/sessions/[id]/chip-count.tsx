@@ -74,6 +74,7 @@ export default function ChipCountView({
     const [stackAmounts, setStackAmounts] = useState<Record<string, string>>({});
     const [loading, setLoading] = useState(true);
     const [submitting, setSubmitting] = useState(false);
+    const [confirmProceed, setConfirmProceed] = useState(false);
 
     const fetchData = useCallback(async () => {
         const { data: members } = await supabase
@@ -244,7 +245,11 @@ export default function ChipCountView({
     };
 
     const handleProceedToPayouts = async () => {
-        if (!confirm("Finalize chip counts and proceed to payouts?")) return;
+        if (!confirmProceed) {
+            setConfirmProceed(true);
+            return;
+        }
+        setConfirmProceed(false);
         setSubmitting(true);
 
         const { error } = await supabase.rpc("proceed_to_payouts", {
@@ -375,13 +380,27 @@ export default function ChipCountView({
                                 Chips do not balance. Fix counts before proceeding.
                             </p>
                         )}
-                        <button
-                            onClick={handleProceedToPayouts}
-                            disabled={!allEntered || !isBalanced || submitting}
-                            className="bg-green-600 hover:bg-green-700 disabled:bg-gray-700 disabled:text-gray-500 text-white font-semibold py-3 rounded-xl w-full transition-colors"
-                        >
-                            {submitting ? "Verifying balance..." : "Proceed to Payouts"}
-                        </button>
+                        {confirmProceed ? (
+                            <div className="space-y-2">
+                                <p className="text-center text-sm text-gray-400">Finalize chip counts and proceed to payouts?</p>
+                                <div className="flex gap-2">
+                                    <button onClick={handleProceedToPayouts} disabled={submitting} className="flex-1 bg-green-600 hover:bg-green-500 disabled:opacity-50 text-white font-bold py-3 rounded-xl">
+                                        {submitting ? "Verifying..." : "Confirm"}
+                                    </button>
+                                    <button onClick={() => setConfirmProceed(false)} className="flex-1 bg-gray-800 hover:bg-gray-700 text-white font-semibold py-3 rounded-xl">
+                                        Cancel
+                                    </button>
+                                </div>
+                            </div>
+                        ) : (
+                            <button
+                                onClick={handleProceedToPayouts}
+                                disabled={!allEntered || !isBalanced || submitting}
+                                className="bg-green-600 hover:bg-green-700 disabled:bg-gray-700 disabled:text-gray-500 text-white font-semibold py-3 rounded-xl w-full transition-colors"
+                            >
+                                Proceed to Payouts
+                            </button>
+                        )}
                     </div>
                 </div>
             )}
