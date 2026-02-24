@@ -187,9 +187,20 @@ export default function ChipCountView({
                 { event: "*", schema: "public", table: "session_guests", filter: `session_id=eq.${sessionId}` },
                 () => fetchData()
             )
+            // Auto-navigate all users when host transitions phase
+            .on("postgres_changes", { event: "UPDATE", schema: "public", table: "sessions", filter: `id=eq.${sessionId}` }, () => window.location.reload())
             .subscribe();
 
-        return () => { supabase.removeChannel(channel); };
+        // Poll session state every 5s — reload if host has moved to next phase
+        const statePoll = setInterval(async () => {
+            const { data } = await supabase.from("sessions").select("state").eq("id", sessionId).single();
+            if (data && data.state !== "chip_count") window.location.reload();
+        }, 5000);
+
+        return () => {
+            supabase.removeChannel(channel);
+            clearInterval(statePoll);
+        };
     }, [fetchData, supabase, sessionId]);
 
     const handleSetStack = async (player: Player) => {

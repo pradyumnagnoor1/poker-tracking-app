@@ -212,9 +212,27 @@ export default function PayoutsView({
     }, [sessionId, supabase]);
 
     useEffect(() => {
-        // eslint-disable-next-line react-hooks/set-state-in-effect
         fetchPayouts();
-    }, [fetchPayouts]);
+
+        const channel = supabase
+            .channel(`payouts-${sessionId}`)
+            // Refresh payment statuses when any payment is claimed/confirmed
+            .on("postgres_changes", { event: "*", schema: "public", table: "payments", filter: `session_id=eq.${sessionId}` }, () => fetchPayouts())
+            // Auto-navigate when host closes session
+            .on("postgres_changes", { event: "UPDATE", schema: "public", table: "sessions", filter: `id=eq.${sessionId}` }, () => window.location.reload())
+            .subscribe();
+
+        // Poll session state every 5s as fallback
+        const statePoll = setInterval(async () => {
+            const { data } = await supabase.from("sessions").select("state").eq("id", sessionId).single();
+            if (data && data.state !== sessionState) window.location.reload();
+        }, 5000);
+
+        return () => {
+            supabase.removeChannel(channel);
+            clearInterval(statePoll);
+        };
+    }, [fetchPayouts, supabase, sessionId, sessionState]);
 
     const handleClaim = async (paymentId: string) => {
         const { error } = await supabase.rpc("claim_payment", { p_payment_id: paymentId });
