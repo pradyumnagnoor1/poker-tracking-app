@@ -20,6 +20,7 @@ type SessionStat = {
   date: string;
   profit: number;
   cumulative: number;
+  isManual?: boolean;
 };
 
 export default async function Dashboard() {
@@ -44,7 +45,13 @@ export default async function Dashboard() {
     (s) => s.state === "payouts" || s.state === "closed"
   );
 
-  let sessionStats: SessionStat[] = [];
+  // Always fetch manual entries (even with no completed sessions)
+  const { data: manualEntries } = await supabase
+    .from("manual_game_entries")
+    .select("id, played_at, profit, notes")
+    .eq("user_id", user.id);
+
+  let statsRaw: Omit<SessionStat, "cumulative">[] = [];
 
   if (completedSessions.length > 0) {
     const completedIds = completedSessions.map((s) => s.id);
@@ -62,7 +69,7 @@ export default async function Dashboard() {
         .in("session_id", completedIds),
     ]);
 
-    const statsRaw = completedSessions
+    statsRaw = completedSessions
       .map((s) => {
         const chipCount = (userChipCounts ?? []).find((c) => c.session_id === s.id);
         if (!chipCount) return null;
@@ -79,15 +86,26 @@ export default async function Dashboard() {
         };
       })
       .filter(Boolean) as Omit<SessionStat, "cumulative">[];
-
-    statsRaw.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-
-    let running = 0;
-    sessionStats = statsRaw.map((s) => {
-      running = Math.round((running + s.profit) * 100) / 100;
-      return { ...s, cumulative: running };
-    });
   }
+
+  const manualStatsRaw: Omit<SessionStat, "cumulative">[] = (manualEntries ?? []).map(
+    (e: { id: string; played_at: string; profit: number; notes: string | null }) => ({
+      id: e.id,
+      title: e.notes || "Manual Entry",
+      date: e.played_at,
+      profit: Math.round(Number(e.profit) * 100) / 100,
+      isManual: true,
+    })
+  );
+
+  const allStatsRaw = [...statsRaw, ...manualStatsRaw];
+  allStatsRaw.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+  let running = 0;
+  const sessionStats: SessionStat[] = allStatsRaw.map((s) => {
+    running = Math.round((running + s.profit) * 100) / 100;
+    return { ...s, cumulative: running };
+  });
 
   return (
     <DashboardClient

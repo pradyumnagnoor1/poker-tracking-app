@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { createSession, joinSession, signOut } from "./actions";
+import { useRouter } from "next/navigation";
+import { createSession, joinSession, signOut, addManualEntry, deleteManualEntry } from "./actions";
 import StatsChart from "./StatsChart";
 import SessionList from "./SessionList";
 import DemoBanner from "./DemoBanner";
@@ -21,6 +22,7 @@ type SessionStat = {
   date: string;
   profit: number;
   cumulative: number;
+  isManual?: boolean;
 };
 
 type Tab = "play" | "stats" | "history";
@@ -38,13 +40,27 @@ export default function DashboardClient({
   sessionStats: SessionStat[];
   isAnonymous: boolean;
 }) {
+  const router = useRouter();
   const [modal, setModal] = useState<"host" | "join" | null>(null);
   const [playerCount, setPlayerCount] = useState(6);
   const [tab, setTab] = useState<Tab>("play");
+  const [showManualForm, setShowManualForm] = useState(false);
+  const [confirmDeleteEntry, setConfirmDeleteEntry] = useState<string | null>(null);
 
   const activeSessions = sessions.filter((s) => s.state !== "closed");
   const historySessions = sessions.filter((s) => s.state === "closed");
   const totalProfit = sessionStats.length > 0 ? sessionStats[sessionStats.length - 1].cumulative : null;
+  const manualEntries = sessionStats.filter((s) => s.isManual);
+
+  const handleDeleteManualEntry = async (id: string) => {
+    if (confirmDeleteEntry !== id) {
+      setConfirmDeleteEntry(id);
+      return;
+    }
+    setConfirmDeleteEntry(null);
+    await deleteManualEntry(id);
+    router.refresh();
+  };
 
   return (
     <main className="min-h-screen bg-gray-950 text-white">
@@ -204,16 +220,113 @@ export default function DashboardClient({
                 <StatsChart stats={sessionStats} />
               </>
             ) : (
-              <div className="text-center py-16 border border-gray-800 border-dashed rounded-2xl">
+              <div className="text-center py-10 border border-gray-800 border-dashed rounded-2xl">
                 <div className="w-10 h-10 bg-gray-800 rounded-xl flex items-center justify-center mx-auto mb-3">
                   <svg className="w-5 h-5 text-gray-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
                   </svg>
                 </div>
                 <p className="text-gray-500 text-sm">No stats yet.</p>
-                <p className="text-gray-700 text-xs mt-1">Complete a game to see your stats.</p>
+                <p className="text-gray-700 text-xs mt-1">Complete a game or add a manual entry below.</p>
               </div>
             )}
+
+            {/* Manual Entries */}
+            <div>
+              <div className="flex justify-between items-center mb-3">
+                <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-widest">Manual Entries</h3>
+                <button
+                  onClick={() => setShowManualForm((v) => !v)}
+                  className="text-xs text-blue-400 hover:text-blue-300 transition-colors"
+                >
+                  {showManualForm ? "Cancel" : "+ Add Entry"}
+                </button>
+              </div>
+
+              {showManualForm && (
+                <form
+                  action={addManualEntry}
+                  onSubmit={() => setShowManualForm(false)}
+                  className="bg-gray-900 border border-gray-800 rounded-2xl p-4 mb-3 space-y-3"
+                >
+                  <div className="flex gap-2">
+                    <div className="flex-1">
+                      <label className="text-xs text-gray-500 mb-1 block">Profit / Loss ($)</label>
+                      <input
+                        name="profit"
+                        type="number"
+                        step="any"
+                        required
+                        placeholder="e.g. -20 or 50"
+                        className="w-full bg-gray-800 border border-gray-700 focus:border-blue-500 rounded-xl px-3 py-2 text-sm placeholder-gray-600 outline-none transition-colors"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs text-gray-500 mb-1 block">Date</label>
+                      <input
+                        name="playedAt"
+                        type="date"
+                        required
+                        defaultValue={new Date().toISOString().split("T")[0]}
+                        className="bg-gray-800 border border-gray-700 focus:border-blue-500 rounded-xl px-3 py-2 text-sm outline-none transition-colors"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-500 mb-1 block">Notes (optional)</label>
+                    <input
+                      name="notes"
+                      type="text"
+                      placeholder="e.g. Home game at Jake's"
+                      className="w-full bg-gray-800 border border-gray-700 focus:border-blue-500 rounded-xl px-3 py-2 text-sm placeholder-gray-600 outline-none transition-colors"
+                    />
+                  </div>
+                  <button
+                    type="submit"
+                    className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-2.5 rounded-xl text-sm transition-colors"
+                  >
+                    Add Entry
+                  </button>
+                </form>
+              )}
+
+              {manualEntries.length > 0 ? (
+                <div className="flex flex-col gap-2">
+                  {manualEntries.map((e) => (
+                    <div key={e.id} className="bg-gray-900 border border-gray-800 rounded-xl px-4 py-3 flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-medium">{e.title}</p>
+                        <p className="text-xs text-gray-500">
+                          {new Date(e.date + "T00:00:00").toLocaleDateString()} · Manual
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className={`text-sm font-bold ${e.profit >= 0 ? "text-green-400" : "text-red-400"}`}>
+                          {e.profit >= 0 ? `+$${e.profit}` : `-$${Math.abs(e.profit)}`}
+                        </span>
+                        {confirmDeleteEntry === e.id ? (
+                          <div className="flex gap-2">
+                            <button onClick={() => handleDeleteManualEntry(e.id)} className="text-xs text-red-500 hover:text-red-400 font-semibold">Remove</button>
+                            <button onClick={() => setConfirmDeleteEntry(null)} className="text-xs text-gray-500 hover:text-gray-400">Cancel</button>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => handleDeleteManualEntry(e.id)}
+                            className="text-gray-600 hover:text-red-500 text-xs border border-gray-700 hover:border-red-800 px-2 py-0.5 rounded transition-colors"
+                          >
+                            Delete
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : !showManualForm && (
+                <p className="text-gray-700 text-xs text-center py-4 border border-gray-800 border-dashed rounded-xl">
+                  No manual entries yet. Add games you played outside the app.
+                </p>
+              )}
+            </div>
           </>
         )}
 

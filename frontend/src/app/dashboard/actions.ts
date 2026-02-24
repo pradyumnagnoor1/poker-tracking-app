@@ -80,3 +80,53 @@ export async function signOut() {
     await supabase.auth.signOut();
     redirect("/");
 }
+
+export async function removeFromHistory(sessionId: string) {
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) redirect("/");
+
+    await supabase
+        .from("session_members")
+        .delete()
+        .eq("session_id", sessionId)
+        .eq("user_id", user.id);
+
+    revalidatePath("/dashboard");
+}
+
+export async function addManualEntry(formData: FormData) {
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) redirect("/");
+
+    const profit = parseFloat(formData.get("profit") as string);
+    const playedAt = (formData.get("playedAt") as string) || new Date().toISOString().split("T")[0];
+    const notes = (formData.get("notes") as string)?.trim() || null;
+
+    if (isNaN(profit)) throw new Error("Invalid profit value");
+
+    const { error } = await supabase.from("manual_game_entries").insert({
+        user_id: user.id,
+        profit,
+        played_at: playedAt,
+        notes,
+    });
+
+    if (error) throw new Error(error.message);
+    revalidatePath("/dashboard");
+}
+
+export async function deleteManualEntry(id: string) {
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) redirect("/");
+
+    await supabase
+        .from("manual_game_entries")
+        .delete()
+        .eq("id", id)
+        .eq("user_id", user.id);
+
+    revalidatePath("/dashboard");
+}

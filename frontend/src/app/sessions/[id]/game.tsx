@@ -63,8 +63,9 @@ export default function GameView({
     const [guestBuyIn, setGuestBuyIn] = useState("");
     const [addingGuest, setAddingGuest] = useState(false);
     const [confirmEndGame, setConfirmEndGame] = useState(false);
+    const [confirmDeleteRebuy, setConfirmDeleteRebuy] = useState<{ playerKey: string; rebuyId: string } | null>(null);
     const [earlyCashoutAmounts, setEarlyCashoutAmounts] = useState<Record<string, string>>({});
-    const [earlyCashedOut, setEarlyCashedOut] = useState<Record<string, number>>({});
+    const [chipCountEntries, setChipCountEntries] = useState<Record<string, number>>({});
 
     // Cashout simulator state
     const [showSimulator, setShowSimulator] = useState(false);
@@ -138,18 +139,32 @@ export default function GameView({
         setLoading(false);
     }, [supabase, sessionId]);
 
+    const fetchEarlyCashouts = useCallback(async () => {
+        const { data: cc } = await supabase.from("chip_counts").select("user_id, final_stack").eq("session_id", sessionId);
+        const { data: gcc } = await supabase.from("guest_chip_counts").select("guest_id, final_stack").eq("session_id", sessionId);
+        const entries: Record<string, number> = {};
+        (cc ?? []).forEach((c: { user_id: string; final_stack: number }) => { entries[`user:${c.user_id}`] = Number(c.final_stack); });
+        (gcc ?? []).forEach((c: { guest_id: string; final_stack: number }) => { entries[`guest:${c.guest_id}`] = Number(c.final_stack); });
+        setChipCountEntries(entries);
+    }, [supabase, sessionId]);
+
     useEffect(() => {
-        // eslint-disable-next-line react-hooks/set-state-in-effect
         fetchPlayers();
+        fetchEarlyCashouts();
 
         const channel = supabase
             .channel(`game-${sessionId}`)
             .on("postgres_changes", { event: "*", schema: "public", table: "buyins", filter: `session_id=eq.${sessionId}` }, () => fetchPlayers())
             .on("postgres_changes", { event: "*", schema: "public", table: "guest_buyins", filter: `session_id=eq.${sessionId}` }, () => fetchPlayers())
             .on("postgres_changes", { event: "*", schema: "public", table: "session_guests", filter: `session_id=eq.${sessionId}` }, () => fetchPlayers())
+            .on("postgres_changes", { event: "*", schema: "public", table: "chip_counts", filter: `session_id=eq.${sessionId}` }, () => fetchEarlyCashouts())
+            .on("postgres_changes", { event: "*", schema: "public", table: "guest_chip_counts", filter: `session_id=eq.${sessionId}` }, () => fetchEarlyCashouts())
             // Auto-navigate all users when host transitions phase
             .on("postgres_changes", { event: "UPDATE", schema: "public", table: "sessions", filter: `id=eq.${sessionId}` }, () => window.location.reload())
             .subscribe();
+
+        // Poll every 5s — ensures rebuys and cashouts are always in sync
+        const poll = setInterval(() => { fetchPlayers(); fetchEarlyCashouts(); }, 5000);
 
         // Poll session state every 5s — reload if host has moved to next phase
         const statePoll = setInterval(async () => {
@@ -159,9 +174,10 @@ export default function GameView({
 
         return () => {
             supabase.removeChannel(channel);
+            clearInterval(poll);
             clearInterval(statePoll);
         };
-    }, [fetchPlayers, supabase, sessionId]);
+    }, [fetchPlayers, fetchEarlyCashouts, supabase, sessionId]);
 
     const handleRebuy = async (player: Player) => {
         const amount = parseFloat(rebuyAmounts[player.player_key]);
@@ -188,7 +204,14 @@ export default function GameView({
     };
 
     const handleDeleteRebuy = async (player: Player, rebuyId: string) => {
-        if (!confirm("Undo this rebuy?")) return;
+        const isConfirmed =
+            confirmDeleteRebuy?.playerKey === player.player_key &&
+            confirmDeleteRebuy?.rebuyId === rebuyId;
+        if (!isConfirmed) {
+            setConfirmDeleteRebuy({ playerKey: player.player_key, rebuyId });
+            return;
+        }
+        setConfirmDeleteRebuy(null);
         if (player.participant_type === "user") {
             await supabase.from("buyins").delete().eq("id", rebuyId);
         } else {
@@ -268,8 +291,35 @@ export default function GameView({
             alert(`Could not record cashout: ${error.message}`);
             return;
         }
-        setEarlyCashedOut((prev) => ({ ...prev, [player.player_key]: amount }));
         setEarlyCashoutAmounts((prev) => ({ ...prev, [player.player_key]: "" }));
+        fetchEarlyCashouts();
+    };
+
+    const handleDeleteChipCount = async (player: Player) => {
+        if (player.participant_type === "user") {
+            await supabase.from("chip_counts").delete().eq("session_id", sessionId).eq("user_id", player.id);
+        } else {
+            await supabase.from("guest_chip_counts").delete().eq("session_id", sessionId).eq("guest_id", player.id);
+        }
+        fetchEarlyCashouts();
+    };
+
+    const handleHostEditChipCount = async (player: Player) => {
+        const amount = parseFloat(earlyCashoutAmounts[player.player_key]);
+        if (isNaN(amount) || amount < 0) return;
+        if (player.participant_type === "user") {
+            await supabase.from("chip_counts").upsert(
+                { session_id: sessionId, user_id: player.id, final_stack: amount },
+                { onConflict: "session_id,user_id" }
+            );
+        } else {
+            await supabase.from("guest_chip_counts").upsert(
+                { session_id: sessionId, guest_id: player.id, final_stack: amount },
+                { onConflict: "session_id,guest_id" }
+            );
+        }
+        setEarlyCashoutAmounts((prev) => ({ ...prev, [player.player_key]: "" }));
+        fetchEarlyCashouts();
     };
 
     const totalPot = players.reduce((sum, p) => sum + p.total_in, 0);
@@ -400,20 +450,27 @@ export default function GameView({
                                         <div key={r.id} className="flex justify-between items-center text-xs text-gray-400 py-1">
                                             <span>Rebuy #{i + 1}: ${r.amount}</span>
                                             {(isHost || (p.participant_type === "user" && p.id === userId)) && (
-                                                <button
-                                                    onClick={() => handleDeleteRebuy(p, r.id)}
-                                                    className="text-red-500 hover:text-red-400"
-                                                >
-                                                    Undo
-                                                </button>
+                                                confirmDeleteRebuy?.playerKey === p.player_key && confirmDeleteRebuy?.rebuyId === r.id ? (
+                                                    <div className="flex gap-2">
+                                                        <button onClick={() => handleDeleteRebuy(p, r.id)} className="text-red-500 hover:text-red-400 font-semibold">Confirm</button>
+                                                        <button onClick={() => setConfirmDeleteRebuy(null)} className="text-gray-500 hover:text-gray-400">Cancel</button>
+                                                    </div>
+                                                ) : (
+                                                    <button
+                                                        onClick={() => handleDeleteRebuy(p, r.id)}
+                                                        className="text-gray-600 hover:text-red-500 transition-colors"
+                                                    >
+                                                        Undo
+                                                    </button>
+                                                )
                                             )}
                                         </div>
                                     ))}
                                 </div>
                             )}
 
-                            {/* Rebuy input */}
-                            {canRebuy && !earlyCashedOut[p.player_key] && (
+                            {/* Rebuy input — hidden if player has cashed out */}
+                            {canRebuy && chipCountEntries[p.player_key] === undefined && (
                                 <div className="flex gap-2 mt-2">
                                     <input
                                         type="number"
@@ -433,36 +490,56 @@ export default function GameView({
                                 </div>
                             )}
 
-                            {/* Early cashout — host records for any player, player can record for themselves */}
-                            {(isHost || (p.participant_type === "user" && p.id === userId)) && !earlyCashedOut[p.player_key] && (
-                                <div className="mt-2 pt-2 border-t border-gray-800">
-                                    <p className="text-gray-600 text-xs mb-1.5">Early cashout</p>
-                                    <div className="flex gap-2">
-                                        <input
-                                            type="number"
-                                            min="0"
-                                            value={earlyCashoutAmounts[p.player_key] || ""}
-                                            onChange={(e) =>
-                                                setEarlyCashoutAmounts((prev) => ({ ...prev, [p.player_key]: e.target.value }))
-                                            }
-                                            placeholder="Final chip stack"
-                                            className="flex-1 bg-gray-800 rounded-lg px-3 py-2 text-sm placeholder-gray-600"
-                                        />
-                                        <button
-                                            onClick={() => handleEarlyCashout(p)}
-                                            className="bg-amber-600 hover:bg-amber-500 text-white font-semibold py-2 px-3 rounded-lg text-sm"
-                                        >
-                                            Cash Out
-                                        </button>
+                            {/* Cashed out — show badge + host controls */}
+                            {chipCountEntries[p.player_key] !== undefined ? (
+                                <div className="mt-2 pt-2 border-t border-gray-800 space-y-2">
+                                    <div className="flex items-center justify-between">
+                                        <span className="text-xs text-amber-400 font-semibold">Cashed out early — ${chipCountEntries[p.player_key]}</span>
+                                        {isHost && (
+                                            <button onClick={() => handleDeleteChipCount(p)} className="text-xs text-red-500 hover:text-red-400">
+                                                Reject
+                                            </button>
+                                        )}
                                     </div>
+                                    {/* Host can correct the amount */}
+                                    {isHost && (
+                                        <div className="flex gap-2">
+                                            <input
+                                                type="number" min="0"
+                                                value={earlyCashoutAmounts[p.player_key] || ""}
+                                                onChange={(e) => setEarlyCashoutAmounts((prev) => ({ ...prev, [p.player_key]: e.target.value }))}
+                                                placeholder="Edit stack amount"
+                                                className="flex-1 bg-gray-800 rounded-lg px-3 py-2 text-xs placeholder-gray-600"
+                                            />
+                                            <button onClick={() => handleHostEditChipCount(p)} className="bg-gray-700 hover:bg-gray-600 text-white text-xs font-semibold py-2 px-3 rounded-lg">
+                                                Edit
+                                            </button>
+                                        </div>
+                                    )}
                                 </div>
-                            )}
-
-                            {earlyCashedOut[p.player_key] !== undefined && (
-                                <div className="mt-2 pt-2 border-t border-gray-800 flex items-center justify-between">
-                                    <span className="text-xs text-amber-400 font-semibold">Cashed out early</span>
-                                    <span className="text-xs text-white font-bold">${earlyCashedOut[p.player_key]} final stack</span>
-                                </div>
+                            ) : (
+                                /* Early cashout request — player submits their own; host can submit for anyone */
+                                (isHost || (p.participant_type === "user" && p.id === userId)) && (
+                                    <div className="mt-2 pt-2 border-t border-gray-800">
+                                        <p className="text-gray-600 text-xs mb-1.5">{isHost && p.id !== userId ? "Record early cashout" : "Cash out early"}</p>
+                                        <div className="flex gap-2">
+                                            <input
+                                                type="number" min="0"
+                                                value={earlyCashoutAmounts[p.player_key] || ""}
+                                                onChange={(e) => setEarlyCashoutAmounts((prev) => ({ ...prev, [p.player_key]: e.target.value }))}
+                                                placeholder="Final chip stack"
+                                                className="flex-1 bg-gray-800 rounded-lg px-3 py-2 text-sm placeholder-gray-600"
+                                            />
+                                            <button
+                                                onClick={() => isHost ? handleHostEditChipCount(p) : handleEarlyCashout(p)}
+                                                className="bg-amber-600 hover:bg-amber-500 text-white font-semibold py-2 px-3 rounded-lg text-sm"
+                                            >
+                                                {isHost ? "Record" : "Submit"}
+                                            </button>
+                                        </div>
+                                        {!isHost && <p className="text-gray-600 text-xs mt-1">Host will review your cashout request.</p>}
+                                    </div>
+                                )
                             )}
                         </div>
                     );
