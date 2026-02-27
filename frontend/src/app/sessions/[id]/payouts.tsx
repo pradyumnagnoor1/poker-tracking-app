@@ -217,8 +217,11 @@ export default function PayoutsView({
 
         const channel = supabase
             .channel(`payouts-${sessionId}`)
-            // Refresh payment statuses when any payment is claimed/confirmed
+            // Refresh when payment status changes
             .on("postgres_changes", { event: "*", schema: "public", table: "payments", filter: `session_id=eq.${sessionId}` }, () => fetchPayouts())
+            // Refresh when chip counts change (catches late entries)
+            .on("postgres_changes", { event: "*", schema: "public", table: "chip_counts", filter: `session_id=eq.${sessionId}` }, () => fetchPayouts())
+            .on("postgres_changes", { event: "*", schema: "public", table: "guest_chip_counts", filter: `session_id=eq.${sessionId}` }, () => fetchPayouts())
             // Auto-navigate when host closes session
             .on("postgres_changes", { event: "UPDATE", schema: "public", table: "sessions", filter: `id=eq.${sessionId}` }, () => window.location.reload())
             .subscribe();

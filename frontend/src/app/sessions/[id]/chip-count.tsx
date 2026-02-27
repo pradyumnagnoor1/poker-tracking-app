@@ -192,6 +192,9 @@ export default function ChipCountView({
             .on("postgres_changes", { event: "UPDATE", schema: "public", table: "sessions", filter: `id=eq.${sessionId}` }, () => window.location.reload())
             .subscribe();
 
+        // Poll every 5s — keeps chip count entries in sync for all users
+        const poll = setInterval(() => fetchData(), 5000);
+
         // Poll session state every 5s — reload if host has moved to next phase
         const statePoll = setInterval(async () => {
             const { data } = await supabase.from("sessions").select("state").eq("id", sessionId).single();
@@ -200,6 +203,7 @@ export default function ChipCountView({
 
         return () => {
             supabase.removeChannel(channel);
+            clearInterval(poll);
             clearInterval(statePoll);
         };
     }, [fetchData, supabase, sessionId]);
