@@ -77,8 +77,17 @@ export default function LobbyView({
             .on("postgres_changes", { event: "UPDATE", schema: "public", table: "sessions", filter: `id=eq.${sessionId}` }, () => window.location.reload())
             .subscribe();
 
+        const poll = setInterval(() => fetchPlayers(), 5000);
+
+        const statePoll = setInterval(async () => {
+            const { data } = await supabase.from("sessions").select("state").eq("id", sessionId).single();
+            if (data && data.state !== "lobby") window.location.reload();
+        }, 5000);
+
         return () => {
             supabase.removeChannel(channel);
+            clearInterval(poll);
+            clearInterval(statePoll);
         };
     }, [fetchPlayers, supabase, sessionId]);
 

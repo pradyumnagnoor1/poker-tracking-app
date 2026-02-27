@@ -1,8 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { createClient } from "@/supabase/client";
-import { computeTransfers } from "@/lib/computeTransfers";
 
 type ParticipantType = "user" | "guest";
 
@@ -66,10 +65,10 @@ export default function GameView({
     const [confirmDeleteRebuy, setConfirmDeleteRebuy] = useState<{ playerKey: string; rebuyId: string } | null>(null);
     const [earlyCashoutAmounts, setEarlyCashoutAmounts] = useState<Record<string, string>>({});
     const [chipCountEntries, setChipCountEntries] = useState<Record<string, number>>({});
-
-    // Cashout simulator state
-    const [showSimulator, setShowSimulator] = useState(false);
-    const [simStacks, setSimStacks] = useState<Record<string, string>>({});
+    const [confirmKickKey, setConfirmKickKey] = useState<string | null>(null);
+    const [timerEndAt, setTimerEndAt] = useState<string | null>(null);
+    const [timeRemaining, setTimeRemaining] = useState<string | null>(null);
+    const [timerInput, setTimerInput] = useState("");
 
     const fetchPlayers = useCallback(async () => {
         const { data: members } = await supabase
@@ -139,6 +138,13 @@ export default function GameView({
         setLoading(false);
     }, [supabase, sessionId]);
 
+    const fetchSession = useCallback(async () => {
+        const { data } = await supabase.from("sessions").select("state, timer_end_at").eq("id", sessionId).single();
+        if (!data) return;
+        if (data.state !== "active") { window.location.reload(); return; }
+        setTimerEndAt(data.timer_end_at ?? null);
+    }, [supabase, sessionId]);
+
     const fetchEarlyCashouts = useCallback(async () => {
         const { data: cc } = await supabase.from("chip_counts").select("user_id, final_stack").eq("session_id", sessionId);
         const { data: gcc } = await supabase.from("guest_chip_counts").select("guest_id, final_stack").eq("session_id", sessionId);
@@ -151,6 +157,7 @@ export default function GameView({
     useEffect(() => {
         fetchPlayers();
         fetchEarlyCashouts();
+        fetchSession();
 
         const channel = supabase
             .channel(`game-${sessionId}`)
@@ -159,14 +166,43 @@ export default function GameView({
             .on("postgres_changes", { event: "*", schema: "public", table: "session_guests", filter: `session_id=eq.${sessionId}` }, () => fetchPlayers())
             .on("postgres_changes", { event: "*", schema: "public", table: "chip_counts", filter: `session_id=eq.${sessionId}` }, () => fetchEarlyCashouts())
             .on("postgres_changes", { event: "*", schema: "public", table: "guest_chip_counts", filter: `session_id=eq.${sessionId}` }, () => fetchEarlyCashouts())
-            // Auto-navigate all users when host transitions phase
-            .on("postgres_changes", { event: "UPDATE", schema: "public", table: "sessions", filter: `id=eq.${sessionId}` }, () => window.location.reload())
+            // Handles phase transitions AND timer updates
+            .on("postgres_changes", { event: "UPDATE", schema: "public", table: "sessions", filter: `id=eq.${sessionId}` }, () => fetchSession())
             .subscribe();
+
+        const poll = setInterval(() => { fetchPlayers(); fetchEarlyCashouts(); }, 5000);
+
+        const statePoll = setInterval(async () => {
+            const { data } = await supabase.from("sessions").select("state").eq("id", sessionId).single();
+            if (data && data.state !== "active") window.location.reload();
+        }, 5000);
 
         return () => {
             supabase.removeChannel(channel);
+            clearInterval(poll);
+            clearInterval(statePoll);
         };
-    }, [fetchPlayers, fetchEarlyCashouts, supabase, sessionId]);
+    }, [fetchPlayers, fetchEarlyCashouts, fetchSession, supabase, sessionId]);
+
+    // Countdown tick — updates every second when timer is active
+    useEffect(() => {
+        if (!timerEndAt) { setTimeRemaining(null); return; }
+        const update = () => {
+            const diff = new Date(timerEndAt).getTime() - Date.now();
+            if (diff <= 0) { setTimeRemaining("Time's up!"); return; }
+            const h = Math.floor(diff / 3600000);
+            const m = Math.floor((diff % 3600000) / 60000);
+            const s = Math.floor((diff % 60000) / 1000);
+            setTimeRemaining(
+                h > 0
+                    ? `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`
+                    : `${m}:${String(s).padStart(2, "0")}`
+            );
+        };
+        update();
+        const tick = setInterval(update, 1000);
+        return () => clearInterval(tick);
+    }, [timerEndAt]);
 
     const handleRebuy = async (player: Player) => {
         const amount = parseFloat(rebuyAmounts[player.player_key]);
@@ -311,6 +347,37 @@ export default function GameView({
         fetchEarlyCashouts();
     };
 
+    const handleKick = async (player: Player) => {
+        if (confirmKickKey !== player.player_key) {
+            setConfirmKickKey(player.player_key);
+            return;
+        }
+        setConfirmKickKey(null);
+        if (player.participant_type === "user") {
+            await supabase.from("chip_counts").delete().eq("session_id", sessionId).eq("user_id", player.id);
+            await supabase.from("buyins").delete().eq("session_id", sessionId).eq("user_id", player.id);
+            await supabase.from("session_members").delete().eq("session_id", sessionId).eq("user_id", player.id);
+        } else {
+            await supabase.from("guest_chip_counts").delete().eq("guest_id", player.id);
+            await supabase.from("guest_buyins").delete().eq("guest_id", player.id);
+            await supabase.from("session_guests").delete().eq("id", player.id);
+        }
+        fetchPlayers();
+    };
+
+    const handleSetTimer = async () => {
+        const minutes = parseFloat(timerInput);
+        if (isNaN(minutes) || minutes <= 0) return;
+        const endAt = new Date(Date.now() + minutes * 60 * 1000).toISOString();
+        const { error } = await supabase.rpc("set_session_timer", { p_session_id: sessionId, p_end_at: endAt });
+        if (error) { alert(error.message); return; }
+        setTimerInput("");
+    };
+
+    const handleClearTimer = async () => {
+        await supabase.rpc("set_session_timer", { p_session_id: sessionId, p_end_at: null });
+    };
+
     const totalPot = players.reduce((sum, p) => sum + p.total_in, 0);
 
     const handleEndGame = async () => {
@@ -335,49 +402,63 @@ export default function GameView({
         window.location.reload();
     };
 
-    // Simulator: compute transfers from hypothetical stacks
-    const simTransfers = useMemo(() => {
-        const input = players
-            .map((p) => {
-                const stack = parseFloat(simStacks[p.player_key]);
-                if (isNaN(stack) || stack < 0) return null;
-                return { user_id: p.player_key, profit: stack - p.total_in };
-            })
-            .filter(Boolean) as { user_id: string; profit: number }[];
-
-        if (input.length < 2) return [];
-        return computeTransfers(input);
-    }, [players, simStacks]);
-
-    const simNameMap = useMemo(
-        () => Object.fromEntries(players.map((p) => [p.player_key, p.display_name])),
-        [players]
-    );
-
-    const simTotalIn = players.reduce((s, p) => s + p.total_in, 0);
-    const simTotalOut = players.reduce((s, p) => {
-        const v = parseFloat(simStacks[p.player_key]);
-        return isNaN(v) ? s : s + v;
-    }, 0);
-    const simEnteredCount = players.filter((p) => {
-        const v = parseFloat(simStacks[p.player_key]);
-        return !isNaN(v) && v >= 0;
-    }).length;
-    const simAllEntered = simEnteredCount === players.length && players.length > 0;
-    const simDiff = Math.round((simTotalOut - simTotalIn) * 100) / 100;
-    const simBalanced = simAllEntered && Math.abs(simDiff) < 0.01;
-
     if (loading) return <p className="text-gray-500 text-sm">Loading...</p>;
 
     return (
         <div className="pb-28">
-            {/* Sticky pot header */}
+            {/* Sticky pot + timer header */}
             <div className="sticky top-0 bg-gray-950 py-3 mb-4 border-b border-gray-800 z-10">
                 <div className="flex justify-between items-center">
                     <span className="text-gray-400 text-sm">Total Pot</span>
                     <span className="text-xl font-bold text-green-400">${totalPot}</span>
                 </div>
+                {timeRemaining && (() => {
+                    const diff = timerEndAt ? new Date(timerEndAt).getTime() - Date.now() : 0;
+                    const color = timeRemaining === "Time's up!" || diff < 300000
+                        ? "text-red-400"
+                        : diff < 600000
+                        ? "text-yellow-400"
+                        : "text-white";
+                    return (
+                        <div className="flex justify-between items-center mt-1">
+                            <span className="text-gray-400 text-sm">Time Remaining</span>
+                            <span className={`text-xl font-bold font-mono ${color}`}>{timeRemaining}</span>
+                        </div>
+                    );
+                })()}
             </div>
+
+            {isHost && (
+                <div className="bg-gray-900 rounded-xl p-4 mb-4">
+                    <h2 className="font-semibold mb-2 text-sm">Session Timer</h2>
+                    {timeRemaining ? (
+                        <div className="flex items-center justify-between">
+                            <span className="text-gray-400 text-sm">Timer is running</span>
+                            <button onClick={handleClearTimer} className="text-xs text-red-500 hover:text-red-400 font-semibold">
+                                Clear Timer
+                            </button>
+                        </div>
+                    ) : (
+                        <div className="flex gap-2">
+                            <input
+                                type="number"
+                                min="1"
+                                value={timerInput}
+                                onChange={(e) => setTimerInput(e.target.value)}
+                                onKeyDown={(e) => e.key === "Enter" && handleSetTimer()}
+                                placeholder="Duration (minutes)"
+                                className="flex-1 bg-gray-800 rounded-lg px-3 py-2 text-sm placeholder-gray-600"
+                            />
+                            <button
+                                onClick={handleSetTimer}
+                                className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2 px-3 rounded-lg text-sm"
+                            >
+                                Start
+                            </button>
+                        </div>
+                    )}
+                </div>
+            )}
 
             {isHost && (
                 <div className="bg-gray-900 rounded-xl p-4 mb-4">
@@ -429,7 +510,19 @@ export default function GameView({
                                         Buy-in: ${p.initial_buy_in} · Rebuys: {p.rebuys.length}
                                     </p>
                                 </div>
-                                <span className="text-green-400 font-bold">${p.total_in}</span>
+                                <div className="flex items-center gap-2">
+                                    <span className="text-green-400 font-bold">${p.total_in}</span>
+                                    {isHost && p.role !== "host" && (
+                                        confirmKickKey === p.player_key ? (
+                                            <div className="flex gap-1">
+                                                <button onClick={() => handleKick(p)} className="text-xs bg-red-600 hover:bg-red-500 text-white px-2 py-0.5 rounded font-semibold">Kick</button>
+                                                <button onClick={() => setConfirmKickKey(null)} className="text-xs bg-gray-700 hover:bg-gray-600 text-gray-300 px-2 py-0.5 rounded">Cancel</button>
+                                            </div>
+                                        ) : (
+                                            <button onClick={() => setConfirmKickKey(p.player_key)} className="text-gray-700 hover:text-red-500 text-xs transition-colors">✕</button>
+                                        )
+                                    )}
+                                </div>
                             </div>
 
                             {/* Rebuys list */}
@@ -533,152 +626,6 @@ export default function GameView({
                         </div>
                     );
                 })}
-            </div>
-
-            {/* Cashout Simulator */}
-            <div className="bg-gray-900 rounded-xl overflow-hidden mb-4">
-                <button
-                    onClick={() => setShowSimulator((v) => !v)}
-                    className="w-full flex items-center justify-between px-4 py-3 text-sm font-semibold hover:bg-gray-800 transition-colors"
-                >
-                    <span>Simulate Cashout</span>
-                    <span className="text-gray-500 text-xs font-normal">
-                        {showSimulator ? "▲ Hide" : "▼ Show"}
-                    </span>
-                </button>
-
-                {showSimulator && (
-                    <div className="px-4 pb-4 border-t border-gray-800 pt-3">
-                        <p className="text-gray-500 text-xs mb-3">
-                            Enter hypothetical final stacks to preview who pays who.
-                        </p>
-
-                        {/* Stack inputs per player */}
-                        <div className="flex flex-col gap-2 mb-4">
-                            {players.map((p) => {
-                                const val = simStacks[p.player_key] ?? "";
-                                const stack = parseFloat(val);
-                                const profit = !isNaN(stack) ? stack - p.total_in : null;
-                                return (
-                                    <div key={p.player_key} className="flex items-center gap-3">
-                                        <div className="flex-1 min-w-0">
-                                            <p className="text-sm font-medium text-white truncate">
-                                                {p.display_name}
-                                            </p>
-                                            <p className="text-gray-500 text-xs">In: ${p.total_in}</p>
-                                        </div>
-                                        <input
-                                            type="number"
-                                            min="0"
-                                            step="any"
-                                            value={val}
-                                            onChange={(e) =>
-                                                setSimStacks((prev) => ({
-                                                    ...prev,
-                                                    [p.player_key]: e.target.value,
-                                                }))
-                                            }
-                                            placeholder="Final stack"
-                                            className="w-28 bg-gray-800 rounded-lg px-2 py-1.5 text-sm placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-gray-600"
-                                        />
-                                        {profit !== null && (
-                                            <span
-                                                className={`text-xs font-bold w-14 text-right shrink-0 ${
-                                                    profit > 0
-                                                        ? "text-green-400"
-                                                        : profit < 0
-                                                        ? "text-red-400"
-                                                        : "text-gray-400"
-                                                }`}
-                                            >
-                                                {profit > 0
-                                                    ? `+$${profit}`
-                                                    : profit < 0
-                                                    ? `-$${Math.abs(profit)}`
-                                                    : "Even"}
-                                            </span>
-                                        )}
-                                    </div>
-                                );
-                            })}
-                        </div>
-
-                        {/* Balance indicator */}
-                        {simEnteredCount > 0 && (
-                            <div
-                                className={`rounded-lg px-3 py-2 mb-3 flex items-center justify-between text-xs ${
-                                    simAllEntered && simBalanced
-                                        ? "bg-green-950/40 border border-green-900/40"
-                                        : simAllEntered
-                                        ? "bg-red-950/40 border border-red-900/40"
-                                        : "bg-gray-800 border border-gray-700"
-                                }`}
-                            >
-                                <span
-                                    className={
-                                        simAllEntered && simBalanced
-                                            ? "text-green-400"
-                                            : simAllEntered
-                                            ? "text-red-400"
-                                            : "text-gray-500"
-                                    }
-                                >
-                                    {!simAllEntered
-                                        ? `${simEnteredCount}/${players.length} stacks entered`
-                                        : simBalanced
-                                        ? "Balanced ✓"
-                                        : `Imbalanced — diff: ${simDiff > 0 ? "+" : ""}$${simDiff}`}
-                                </span>
-                                {simAllEntered && (
-                                    <span className="text-gray-500">
-                                        In: ${simTotalIn} · Out: ${simTotalOut}
-                                    </span>
-                                )}
-                            </div>
-                        )}
-
-                        {/* Simulated settlements */}
-                        {simTransfers.length === 0 ? (
-                            <p className="text-gray-600 text-xs text-center py-2">
-                                {simEnteredCount < 2
-                                    ? "Enter at least 2 stacks to see settlements."
-                                    : "No transfers needed — everyone breaks even!"}
-                            </p>
-                        ) : (
-                            <div className="flex flex-col gap-2">
-                                <p className="text-gray-500 text-xs font-semibold mb-1">
-                                    Who Pays Who
-                                </p>
-                                {simTransfers.map((t, i) => (
-                                    <div
-                                        key={i}
-                                        className="flex justify-between items-center rounded-lg bg-gray-800/50 border border-gray-700 px-3 py-2"
-                                    >
-                                        <p className="text-sm">
-                                            <span className="text-red-400 font-semibold">
-                                                {simNameMap[t.from_user_id]}
-                                            </span>
-                                            <span className="text-gray-500 mx-1.5">pays</span>
-                                            <span className="text-green-400 font-semibold">
-                                                {simNameMap[t.to_user_id]}
-                                            </span>
-                                        </p>
-                                        <span className="font-bold text-white">${t.amount}</span>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-
-                        {simEnteredCount > 0 && (
-                            <button
-                                onClick={() => setSimStacks({})}
-                                className="mt-3 text-gray-600 hover:text-gray-400 text-xs transition-colors"
-                            >
-                                Clear inputs
-                            </button>
-                        )}
-                    </div>
-                )}
             </div>
 
             {/* End game button */}
