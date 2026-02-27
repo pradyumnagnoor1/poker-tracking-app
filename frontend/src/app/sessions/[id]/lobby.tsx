@@ -77,19 +77,8 @@ export default function LobbyView({
             .on("postgres_changes", { event: "UPDATE", schema: "public", table: "sessions", filter: `id=eq.${sessionId}` }, () => window.location.reload())
             .subscribe();
 
-        // Polling fallback — ensures updates arrive even if Realtime is delayed
-        const poll = setInterval(fetchPlayers, 3000);
-
-        // Poll session state every 5s — reload if host has moved to next phase
-        const statePoll = setInterval(async () => {
-            const { data } = await supabase.from("sessions").select("state").eq("id", sessionId).single();
-            if (data && data.state !== "lobby") window.location.reload();
-        }, 5000);
-
         return () => {
             supabase.removeChannel(channel);
-            clearInterval(poll);
-            clearInterval(statePoll);
         };
     }, [fetchPlayers, supabase, sessionId]);
 

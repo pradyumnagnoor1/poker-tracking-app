@@ -226,19 +226,8 @@ export default function PayoutsView({
             .on("postgres_changes", { event: "UPDATE", schema: "public", table: "sessions", filter: `id=eq.${sessionId}` }, () => window.location.reload())
             .subscribe();
 
-        // Poll every 5s — keeps payment statuses in sync for all users
-        const poll = setInterval(() => fetchPayouts(), 5000);
-
-        // Poll session state every 5s as fallback
-        const statePoll = setInterval(async () => {
-            const { data } = await supabase.from("sessions").select("state").eq("id", sessionId).single();
-            if (data && data.state !== sessionState) window.location.reload();
-        }, 5000);
-
         return () => {
             supabase.removeChannel(channel);
-            clearInterval(poll);
-            clearInterval(statePoll);
         };
     }, [fetchPayouts, supabase, sessionId, sessionState]);
 

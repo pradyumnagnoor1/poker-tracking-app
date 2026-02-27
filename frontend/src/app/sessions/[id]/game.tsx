@@ -163,19 +163,8 @@ export default function GameView({
             .on("postgres_changes", { event: "UPDATE", schema: "public", table: "sessions", filter: `id=eq.${sessionId}` }, () => window.location.reload())
             .subscribe();
 
-        // Poll every 5s — ensures rebuys and cashouts are always in sync
-        const poll = setInterval(() => { fetchPlayers(); fetchEarlyCashouts(); }, 5000);
-
-        // Poll session state every 5s — reload if host has moved to next phase
-        const statePoll = setInterval(async () => {
-            const { data } = await supabase.from("sessions").select("state").eq("id", sessionId).single();
-            if (data && data.state !== "active") window.location.reload();
-        }, 5000);
-
         return () => {
             supabase.removeChannel(channel);
-            clearInterval(poll);
-            clearInterval(statePoll);
         };
     }, [fetchPlayers, fetchEarlyCashouts, supabase, sessionId]);
 
