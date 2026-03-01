@@ -375,10 +375,12 @@ export default function GameView({
         const endAt = new Date(Date.now() + totalMs).toISOString();
         const { error } = await supabase.rpc("set_session_timer", { p_session_id: sessionId, p_end_at: endAt });
         if (error) { alert(error.message); return; }
+        setTimerEndAt(endAt); // update immediately — don't wait on realtime
     };
 
     const handleClearTimer = async () => {
-        await supabase.rpc("set_session_timer", { p_session_id: sessionId, p_end_at: null });
+        const { error } = await supabase.rpc("set_session_timer", { p_session_id: sessionId, p_end_at: null });
+        if (!error) setTimerEndAt(null);
     };
 
     const handleTransferHost = async (player: Player) => {
