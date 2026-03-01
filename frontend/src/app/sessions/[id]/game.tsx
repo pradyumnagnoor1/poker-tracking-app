@@ -68,7 +68,9 @@ export default function GameView({
     const [confirmKickKey, setConfirmKickKey] = useState<string | null>(null);
     const [timerEndAt, setTimerEndAt] = useState<string | null>(null);
     const [timeRemaining, setTimeRemaining] = useState<string | null>(null);
-    const [timerInput, setTimerInput] = useState("");
+    const [timerHours, setTimerHours] = useState("0");
+    const [timerMinutes, setTimerMinutes] = useState("30");
+    const [confirmTransferKey, setConfirmTransferKey] = useState<string | null>(null);
 
     const fetchPlayers = useCallback(async () => {
         const { data: members } = await supabase
@@ -366,16 +368,28 @@ export default function GameView({
     };
 
     const handleSetTimer = async () => {
-        const minutes = parseFloat(timerInput);
-        if (isNaN(minutes) || minutes <= 0) return;
-        const endAt = new Date(Date.now() + minutes * 60 * 1000).toISOString();
+        const h = parseInt(timerHours) || 0;
+        const m = parseInt(timerMinutes) || 0;
+        const totalMs = (h * 60 + m) * 60 * 1000;
+        if (totalMs <= 0) return;
+        const endAt = new Date(Date.now() + totalMs).toISOString();
         const { error } = await supabase.rpc("set_session_timer", { p_session_id: sessionId, p_end_at: endAt });
         if (error) { alert(error.message); return; }
-        setTimerInput("");
     };
 
     const handleClearTimer = async () => {
         await supabase.rpc("set_session_timer", { p_session_id: sessionId, p_end_at: null });
+    };
+
+    const handleTransferHost = async (player: Player) => {
+        if (confirmTransferKey !== player.player_key) {
+            setConfirmTransferKey(player.player_key);
+            return;
+        }
+        setConfirmTransferKey(null);
+        const { error } = await supabase.rpc("transfer_host", { p_session_id: sessionId, p_new_host_id: player.id });
+        if (error) { alert(error.message); return; }
+        window.location.reload();
     };
 
     const totalPot = players.reduce((sum, p) => sum + p.total_in, 0);
@@ -431,27 +445,40 @@ export default function GameView({
             {isHost && (
                 <div className="bg-gray-900 rounded-xl p-4 mb-4">
                     <h2 className="font-semibold mb-2 text-sm">Session Timer</h2>
-                    {timeRemaining ? (
+                    {timerEndAt && timeRemaining !== null ? (
                         <div className="flex items-center justify-between">
-                            <span className="text-gray-400 text-sm">Timer is running</span>
+                            <span className="text-gray-400 text-sm">
+                                {timeRemaining === "Time's up!" ? "Timer expired" : "Timer running"}
+                            </span>
                             <button onClick={handleClearTimer} className="text-xs text-red-500 hover:text-red-400 font-semibold">
-                                Clear Timer
+                                Clear
                             </button>
                         </div>
                     ) : (
-                        <div className="flex gap-2">
-                            <input
-                                type="number"
-                                min="1"
-                                value={timerInput}
-                                onChange={(e) => setTimerInput(e.target.value)}
-                                onKeyDown={(e) => e.key === "Enter" && handleSetTimer()}
-                                placeholder="Duration (minutes)"
-                                className="flex-1 bg-gray-800 rounded-lg px-3 py-2 text-sm placeholder-gray-600"
-                            />
+                        <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-1 flex-1">
+                                <select
+                                    value={timerHours}
+                                    onChange={(e) => setTimerHours(e.target.value)}
+                                    className="flex-1 bg-gray-800 rounded-lg px-2 py-2 text-sm text-white"
+                                >
+                                    {Array.from({ length: 9 }, (_, i) => (
+                                        <option key={i} value={i}>{i}h</option>
+                                    ))}
+                                </select>
+                                <select
+                                    value={timerMinutes}
+                                    onChange={(e) => setTimerMinutes(e.target.value)}
+                                    className="flex-1 bg-gray-800 rounded-lg px-2 py-2 text-sm text-white"
+                                >
+                                    {[0, 5, 10, 15, 20, 25, 30, 45].map((m) => (
+                                        <option key={m} value={m}>{m}m</option>
+                                    ))}
+                                </select>
+                            </div>
                             <button
                                 onClick={handleSetTimer}
-                                className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2 px-3 rounded-lg text-sm"
+                                className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2 px-4 rounded-lg text-sm"
                             >
                                 Start
                             </button>
@@ -459,6 +486,34 @@ export default function GameView({
                     )}
                 </div>
             )}
+
+            {isHost && (() => {
+                const transferablePlayers = players.filter(p => p.participant_type === "user" && p.role !== "host");
+                if (transferablePlayers.length === 0) return null;
+                return (
+                    <div className="bg-gray-900 rounded-xl p-4 mb-4">
+                        <h2 className="font-semibold mb-1 text-sm">Transfer Host</h2>
+                        <p className="text-gray-500 text-xs mb-3">Pass host controls to another player.</p>
+                        <div className="flex flex-col gap-2">
+                            {transferablePlayers.map((p) => (
+                                <div key={p.player_key} className="flex items-center justify-between">
+                                    <span className="text-sm text-gray-300">{p.display_name}</span>
+                                    {confirmTransferKey === p.player_key ? (
+                                        <div className="flex gap-2">
+                                            <button onClick={() => handleTransferHost(p)} className="text-xs bg-amber-600 hover:bg-amber-500 text-white px-3 py-1 rounded font-semibold">Confirm</button>
+                                            <button onClick={() => setConfirmTransferKey(null)} className="text-xs bg-gray-700 hover:bg-gray-600 text-gray-300 px-3 py-1 rounded">Cancel</button>
+                                        </div>
+                                    ) : (
+                                        <button onClick={() => setConfirmTransferKey(p.player_key)} className="text-xs text-indigo-400 hover:text-indigo-300 font-semibold">
+                                            Make Host
+                                        </button>
+                                    )}
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                );
+            })()}
 
             {isHost && (
                 <div className="bg-gray-900 rounded-xl p-4 mb-4">
