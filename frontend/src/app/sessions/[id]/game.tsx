@@ -141,11 +141,14 @@ export default function GameView({
     }, [supabase, sessionId]);
 
     const fetchSession = useCallback(async () => {
-        const { data } = await supabase.from("sessions").select("state, timer_end_at").eq("id", sessionId).single();
+        const { data } = await supabase.from("sessions").select("state, timer_end_at, host_user_id").eq("id", sessionId).single();
         if (!data) return;
         if (data.state !== "active") { window.location.reload(); return; }
+        // Reload if host changed (catches host transfer for all connected clients)
+        const nowIsHost = data.host_user_id === userId;
+        if (nowIsHost !== isHost) { window.location.reload(); return; }
         setTimerEndAt(data.timer_end_at ?? null);
-    }, [supabase, sessionId]);
+    }, [supabase, sessionId, userId, isHost]);
 
     const fetchEarlyCashouts = useCallback(async () => {
         const { data: cc } = await supabase.from("chip_counts").select("user_id, final_stack").eq("session_id", sessionId);
@@ -174,10 +177,7 @@ export default function GameView({
 
         const poll = setInterval(() => { fetchPlayers(); fetchEarlyCashouts(); }, 5000);
 
-        const statePoll = setInterval(async () => {
-            const { data } = await supabase.from("sessions").select("state").eq("id", sessionId).single();
-            if (data && data.state !== "active") window.location.reload();
-        }, 5000);
+        const statePoll = setInterval(() => fetchSession(), 5000);
 
         return () => {
             supabase.removeChannel(channel);
