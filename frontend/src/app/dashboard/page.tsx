@@ -14,13 +14,14 @@ type Membership = {
   };
 };
 
-type SessionStat = {
+export type SessionStat = {
   id: string;
   title: string;
   date: string;
   profit: number;
   cumulative: number;
   isManual?: boolean;
+  hours?: number; // play time in hours — only set when timing data exists
 };
 
 export default async function Dashboard() {
@@ -45,7 +46,6 @@ export default async function Dashboard() {
     (s) => s.state === "payouts" || s.state === "closed"
   );
 
-  // Always fetch manual entries (even with no completed sessions)
   const { data: manualEntries } = await supabase
     .from("manual_game_entries")
     .select("id, played_at, profit, notes")
@@ -56,7 +56,12 @@ export default async function Dashboard() {
   if (completedSessions.length > 0) {
     const completedIds = completedSessions.map((s) => s.id);
 
-    const [{ data: userBuyins }, { data: userChipCounts }] = await Promise.all([
+    const [
+      { data: userBuyins },
+      { data: userChipCounts },
+      { data: memberTimings },
+      { data: sessionTimings },
+    ] = await Promise.all([
       supabase
         .from("buyins")
         .select("session_id, amount")
@@ -67,7 +72,29 @@ export default async function Dashboard() {
         .select("session_id, final_stack")
         .eq("user_id", user.id)
         .in("session_id", completedIds),
+      // Timing: when this user joined each game (added in SQL 005 — may be null for old sessions)
+      supabase
+        .from("session_members")
+        .select("session_id, game_joined_at")
+        .eq("user_id", user.id)
+        .in("session_id", completedIds),
+      // Timing: when each game ended (added in SQL 005 — may be null for old sessions)
+      supabase
+        .from("sessions")
+        .select("id, game_ended_at")
+        .in("id", completedIds),
     ]);
+
+    const joinedAtMap: Record<string, string> = Object.fromEntries(
+      (memberTimings ?? [])
+        .filter((m) => m.game_joined_at)
+        .map((m) => [m.session_id, m.game_joined_at])
+    );
+    const endedAtMap: Record<string, string> = Object.fromEntries(
+      (sessionTimings ?? [])
+        .filter((s) => s.game_ended_at)
+        .map((s) => [s.id, s.game_ended_at])
+    );
 
     statsRaw = completedSessions
       .map((s) => {
@@ -78,12 +105,17 @@ export default async function Dashboard() {
           .filter((b) => b.session_id === s.id)
           .reduce((sum, b) => sum + b.amount, 0);
 
-        return {
-          id: s.id,
-          title: s.title,
-          date: s.created_at,
-          profit: Math.round((Number(chipCount.final_stack) - totalIn) * 100) / 100,
-        };
+        const profit = Math.round((Number(chipCount.final_stack) - totalIn) * 100) / 100;
+
+        // Compute hours only when both timestamps exist (requires SQL 005)
+        const joinedAt = joinedAtMap[s.id];
+        const endedAt = endedAtMap[s.id];
+        const hours =
+          joinedAt && endedAt
+            ? Math.max(0, (new Date(endedAt).getTime() - new Date(joinedAt).getTime()) / 3_600_000)
+            : undefined;
+
+        return { id: s.id, title: s.title, date: s.created_at, profit, hours };
       })
       .filter(Boolean) as Omit<SessionStat, "cumulative">[];
   }

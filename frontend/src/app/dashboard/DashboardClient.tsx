@@ -25,6 +25,7 @@ type SessionStat = {
   profit: number;
   cumulative: number;
   isManual?: boolean;
+  hours?: number;
 };
 
 type Tab = "play" | "stats" | "history" | "settle";
@@ -95,6 +96,24 @@ export default function DashboardClient({
   const historySessions = sessions.filter((s) => s.state === "closed");
   const totalProfit = sessionStats.length > 0 ? sessionStats[sessionStats.length - 1].cumulative : null;
   const manualEntries = sessionStats.filter((s) => s.isManual);
+
+  // Advanced analytics derived from sessionStats
+  const gameSessions = sessionStats.filter((s) => !s.isManual);
+  const wins = gameSessions.filter((s) => s.profit > 0).length;
+  const winRate = gameSessions.length > 0 ? Math.round((wins / gameSessions.length) * 100) : null;
+  const avgProfit = sessionStats.length > 0
+    ? Math.round((sessionStats.reduce((s, ss) => s + ss.profit, 0) / sessionStats.length) * 100) / 100
+    : null;
+  const bestSession = sessionStats.length > 0 ? sessionStats.reduce((a, b) => b.profit > a.profit ? b : a) : null;
+  const worstSession = sessionStats.length > 0 ? sessionStats.reduce((a, b) => b.profit < a.profit ? b : a) : null;
+
+  // Hourly rate — only from sessions that have timing data (SQL 005)
+  const timedSessions = gameSessions.filter((s) => s.hours !== undefined && s.hours! > 0);
+  const totalHours = timedSessions.reduce((s, ss) => s + ss.hours!, 0);
+  const totalTimedProfit = timedSessions.reduce((s, ss) => s + ss.profit, 0);
+  const hourlyRate = timedSessions.length > 0 && totalHours > 0
+    ? Math.round((totalTimedProfit / totalHours) * 100) / 100
+    : null;
 
   const handleJoin = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -279,31 +298,65 @@ export default function DashboardClient({
           <>
             {sessionStats.length > 0 ? (
               <>
+                {/* Row 1: Games / Win Rate / Avg/Session */}
                 <div className="grid grid-cols-3 gap-3">
                   <div className="bg-gray-900 border border-gray-800 rounded-2xl p-4 text-center">
                     <p className="text-xs text-gray-500 mb-1">Games</p>
                     <p className="text-xl font-bold">{sessionStats.length}</p>
                   </div>
                   <div className="bg-gray-900 border border-gray-800 rounded-2xl p-4 text-center">
-                    <p className="text-xs text-gray-500 mb-1">Wins</p>
+                    <p className="text-xs text-gray-500 mb-1">Win Rate</p>
                     <p className="text-xl font-bold text-green-400">
-                      {sessionStats.filter((s) => s.profit > 0).length}
+                      {winRate !== null ? `${winRate}%` : "—"}
                     </p>
                   </div>
                   <div className="bg-gray-900 border border-gray-800 rounded-2xl p-4 text-center">
-                    <p className="text-xs text-gray-500 mb-1">Losses</p>
-                    <p className="text-xl font-bold text-red-400">
-                      {sessionStats.filter((s) => s.profit < 0).length}
+                    <p className="text-xs text-gray-500 mb-1">Avg/Session</p>
+                    <p className={`text-xl font-bold ${avgProfit !== null && avgProfit >= 0 ? "text-green-400" : "text-red-400"}`}>
+                      {avgProfit !== null ? `${avgProfit >= 0 ? "+" : ""}$${Math.abs(avgProfit)}` : "—"}
                     </p>
                   </div>
                 </div>
 
+                {/* Lifetime P/L */}
                 <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5">
                   <p className="text-xs text-gray-500 mb-1">Lifetime P/L</p>
                   <p className={`text-3xl font-extrabold ${totalProfit! >= 0 ? "text-green-400" : "text-red-400"}`}>
                     {totalProfit! >= 0 ? `+$${totalProfit}` : `-$${Math.abs(totalProfit!)}`}
                   </p>
                 </div>
+
+                {/* Hourly rate + total hours — only shown when timing data exists */}
+                {hourlyRate !== null && (
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="bg-gray-900 border border-gray-800 rounded-2xl p-4 text-center">
+                      <p className="text-xs text-gray-500 mb-1">$/hr</p>
+                      <p className={`text-xl font-bold ${hourlyRate >= 0 ? "text-green-400" : "text-red-400"}`}>
+                        {hourlyRate >= 0 ? "+" : ""}${Math.abs(hourlyRate).toFixed(2)}
+                      </p>
+                    </div>
+                    <div className="bg-gray-900 border border-gray-800 rounded-2xl p-4 text-center">
+                      <p className="text-xs text-gray-500 mb-1">Total Hours</p>
+                      <p className="text-xl font-bold">{totalHours.toFixed(1)}h</p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Best / Worst session */}
+                {bestSession && worstSession && bestSession.id !== worstSession.id && (
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="bg-gray-900 border border-gray-800 rounded-2xl p-4">
+                      <p className="text-xs text-gray-500 mb-1">Best Session</p>
+                      <p className="text-lg font-bold text-green-400">+${bestSession.profit}</p>
+                      <p className="text-xs text-gray-600 truncate mt-0.5">{bestSession.title}</p>
+                    </div>
+                    <div className="bg-gray-900 border border-gray-800 rounded-2xl p-4">
+                      <p className="text-xs text-gray-500 mb-1">Worst Session</p>
+                      <p className="text-lg font-bold text-red-400">-${Math.abs(worstSession.profit)}</p>
+                      <p className="text-xs text-gray-600 truncate mt-0.5">{worstSession.title}</p>
+                    </div>
+                  </div>
+                )}
 
                 <StatsChart stats={sessionStats} />
               </>
