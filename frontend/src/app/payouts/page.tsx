@@ -22,8 +22,6 @@ export default async function PayoutsPage() {
   } = await supabase.auth.getUser();
   if (!user) redirect("/");
 
-  // Fetch all unsettled payments involving the current user.
-  // RLS guarantees we only see payments for sessions we're a member of.
   const { data: rawPayments } = await supabase
     .from("payments")
     .select("*, session:sessions(id, title)")
@@ -33,7 +31,6 @@ export default async function PayoutsPage() {
 
   const payments: Payment[] = rawPayments ?? [];
 
-  // Fetch display names for all counterparties in one query
   const otherIds = [
     ...new Set(
       payments.map((p) =>
@@ -62,50 +59,52 @@ export default async function PayoutsPage() {
 
   return (
     <main className="min-h-screen bg-gray-950 text-white">
-      <div className="max-w-lg mx-auto px-5 py-8">
+      <div className="max-w-lg mx-auto px-5" style={{ paddingTop: "max(env(safe-area-inset-top), 24px)", paddingBottom: 32 }}>
 
         {/* Header */}
-        <div className="flex items-center gap-4 mb-6">
+        <div className="flex items-center gap-3 mb-6">
           <Link
             href="/dashboard"
-            className="text-gray-500 hover:text-white transition-colors"
+            className="w-10 h-10 flex items-center justify-center rounded-full bg-gray-900 border border-gray-800 active:bg-gray-800 transition-colors shrink-0"
           >
-            <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <svg className="w-5 h-5 text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <polyline points="15 18 9 12 15 6" />
             </svg>
           </Link>
           <h1 className="text-xl font-bold">Settlements</h1>
         </div>
 
-        {/* Net balance card */}
+        {/* Net balance hero card */}
         <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5 mb-6">
           <p className="text-xs font-semibold text-gray-500 uppercase tracking-widest mb-2">
             Net Balance
           </p>
           <p
-            className={`text-4xl font-extrabold ${
+            className={`text-5xl font-black tabular-nums ${
               net > 0 ? "text-green-400" : net < 0 ? "text-red-400" : "text-gray-400"
             }`}
           >
             {net > 0 ? "+" : net < 0 ? "-" : ""}${Math.abs(net).toFixed(2)}
           </p>
-          <p className="text-xs text-gray-600 mt-1">
+          <p className="text-xs text-gray-600 mt-2">
             {net > 0
               ? "You are owed more than you owe"
               : net < 0
               ? "You owe more than you are owed"
               : "You're all settled up"}
           </p>
-          <div className="flex gap-6 mt-4 pt-4 border-t border-gray-800">
-            <div>
-              <p className="text-xs text-gray-500 mb-1">You owe</p>
-              <p className="text-lg font-bold text-red-400">${totalIOwe.toFixed(2)}</p>
+          {(totalIOwe > 0 || totalIAmOwed > 0) && (
+            <div className="flex gap-6 mt-4 pt-4 border-t border-gray-800">
+              <div>
+                <p className="text-xs text-gray-500 mb-1">You owe</p>
+                <p className="text-2xl font-extrabold tabular-nums text-red-400">${totalIOwe.toFixed(2)}</p>
+              </div>
+              <div>
+                <p className="text-xs text-gray-500 mb-1">You are owed</p>
+                <p className="text-2xl font-extrabold tabular-nums text-green-400">${totalIAmOwed.toFixed(2)}</p>
+              </div>
             </div>
-            <div>
-              <p className="text-xs text-gray-500 mb-1">You are owed</p>
-              <p className="text-lg font-bold text-green-400">${totalIAmOwed.toFixed(2)}</p>
-            </div>
-          </div>
+          )}
         </div>
 
         {/* You Owe */}
@@ -114,7 +113,7 @@ export default async function PayoutsPage() {
             <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-widest">
               You Owe
             </h2>
-            <span className="text-sm font-bold text-red-400">${totalIOwe.toFixed(2)}</span>
+            <span className="text-base font-bold tabular-nums text-red-400">${totalIOwe.toFixed(2)}</span>
           </div>
 
           {iOwe.length === 0 ? (
@@ -141,7 +140,7 @@ export default async function PayoutsPage() {
             <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-widest">
               You Are Owed
             </h2>
-            <span className="text-sm font-bold text-green-400">${totalIAmOwed.toFixed(2)}</span>
+            <span className="text-base font-bold tabular-nums text-green-400">${totalIAmOwed.toFixed(2)}</span>
           </div>
 
           {iAmOwed.length === 0 ? (

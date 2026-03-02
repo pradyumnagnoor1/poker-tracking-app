@@ -4,7 +4,8 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { createSession, joinSession, signOut, addManualEntry, deleteManualEntry } from "./actions";
 import { createClient } from "@/supabase/client";
-import PayoutCard from "../payouts/PayoutCard";
+import PersonRow from "../payouts/PersonRow";
+import type { PersonGroup } from "../payouts/types";
 import StatsChart from "./StatsChart";
 import SessionList from "./SessionList";
 import DemoBanner from "./DemoBanner";
@@ -103,8 +104,6 @@ export default function DashboardClient({
     setJoinLoading(true);
     const supabase = createClient();
 
-    // Try lobby join first
-    // join_by_code returns the session UUID — use it to redirect directly
     const { data: lobbySessionId, error: lobbyError } = await supabase.rpc("join_by_code", { p_code: code });
     if (!lobbyError && lobbySessionId) {
       router.push(`/sessions/${lobbySessionId}`);
@@ -113,7 +112,6 @@ export default function DashboardClient({
       return;
     }
 
-    // Fallback: request to join an active session
     const { data: sessionId, error: requestError } = await supabase.rpc("request_to_join_by_code", { p_code: code });
     if (!requestError && sessionId) {
       router.push(`/sessions/${sessionId}`);
@@ -147,112 +145,52 @@ export default function DashboardClient({
           <p className="text-gray-500 text-sm">{isAnonymous ? "Demo User" : fullName}</p>
         </div>
         <form action={signOut}>
-          <button className="text-gray-500 text-sm hover:text-white transition-colors">Sign Out</button>
+          <button className="text-gray-500 text-sm active:text-white transition-colors py-2 px-1">Sign Out</button>
         </form>
       </header>
 
-      {/* Tab Bar */}
-      <div className="px-5 max-w-lg mx-auto mb-6">
-        {isAnonymous && <div className="mb-4"><DemoBanner /></div>}
-        <div className="flex bg-gray-900 border border-gray-800 rounded-2xl p-1">
-          <button
-            onClick={() => setTab("play")}
-            className={`flex items-center justify-center gap-2 flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all ${
-              tab === "play" ? "bg-gray-700 text-white shadow" : "text-gray-500 hover:text-gray-300"
-            }`}
-          >
-            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <polygon points="5 3 19 12 5 21 5 3"/>
-            </svg>
-            Play
-          </button>
-          <button
-            onClick={() => setTab("stats")}
-            className={`flex items-center justify-center gap-2 flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all ${
-              tab === "stats" ? "bg-gray-700 text-white shadow" : "text-gray-500 hover:text-gray-300"
-            }`}
-          >
-            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
-            </svg>
-            Stats
-            {totalProfit !== null && (
-              <span className={`text-xs font-semibold ${totalProfit >= 0 ? "text-green-400" : "text-red-400"}`}>
-                {totalProfit >= 0 ? `+$${totalProfit}` : `-$${Math.abs(totalProfit)}`}
-              </span>
-            )}
-          </button>
-          <button
-            onClick={() => setTab("history")}
-            className={`flex items-center justify-center gap-2 flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all ${
-              tab === "history" ? "bg-gray-700 text-white shadow" : "text-gray-500 hover:text-gray-300"
-            }`}
-          >
-            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <circle cx="12" cy="12" r="10"/>
-              <polyline points="12 6 12 12 16 14"/>
-            </svg>
-            History
-            {historySessions.length > 0 && (
-              <span className="text-xs text-gray-500">{historySessions.length}</span>
-            )}
-          </button>
-          <button
-            onClick={() => setTab("settle")}
-            className={`flex items-center justify-center gap-2 flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all ${
-              tab === "settle" ? "bg-gray-700 text-white shadow" : "text-gray-500 hover:text-gray-300"
-            }`}
-          >
-            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <polyline points="17 1 21 5 17 9"/>
-              <path d="M3 11V9a4 4 0 0 1 4-4h14"/>
-              <polyline points="7 23 3 19 7 15"/>
-              <path d="M21 13v2a4 4 0 0 1-4 4H3"/>
-            </svg>
-            Settle
-          </button>
+      {isAnonymous && (
+        <div className="px-5 max-w-lg mx-auto mb-4">
+          <DemoBanner />
         </div>
-      </div>
+      )}
 
-      <div className="px-5 max-w-lg mx-auto pb-16 space-y-6">
+      {/* Tab content — padded above bottom nav */}
+      <div className="px-5 max-w-lg mx-auto pb-32 space-y-6">
 
         {/* PLAY TAB */}
         {tab === "play" && (
           <>
             <div className="grid grid-cols-2 gap-3">
               <button
-                onClick={() => setModal("host")}
-                className="group bg-green-500/10 border border-green-500/25 hover:bg-green-500/20 hover:border-green-500/50 rounded-2xl p-5 text-left transition-all"
+                onClick={() => setModal("join")}
+                className="bg-blue-500/10 border border-blue-500/25 active:bg-blue-500/20 active:border-blue-500/50 rounded-2xl p-5 text-left transition-all min-h-[96px]"
               >
-                <div className="w-8 h-8 bg-green-500/20 rounded-lg flex items-center justify-center mb-3">
-                  <svg className="w-4 h-4 text-green-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <div className="w-9 h-9 bg-blue-500/20 rounded-xl flex items-center justify-center mb-3">
+                  <svg className="w-5 h-5 text-blue-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/>
+                    <polyline points="10 17 15 12 10 7"/>
+                    <line x1="15" y1="12" x2="3" y2="12"/>
+                  </svg>
+                </div>
+                <p className="font-bold text-blue-400 text-sm">Join a Game</p>
+                <p className="text-gray-600 text-xs mt-1">Enter invite code</p>
+              </button>
+
+              <button
+                onClick={() => setModal("host")}
+                className="bg-green-500/10 border border-green-500/25 active:bg-green-500/20 active:border-green-500/50 rounded-2xl p-5 text-left transition-all min-h-[96px]"
+              >
+                <div className="w-9 h-9 bg-green-500/20 rounded-xl flex items-center justify-center mb-3">
+                  <svg className="w-5 h-5 text-green-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
                     <circle cx="9" cy="7" r="4"/>
                     <line x1="19" y1="8" x2="19" y2="14"/>
                     <line x1="22" y1="11" x2="16" y2="11"/>
                   </svg>
                 </div>
-                <p className="font-semibold text-green-400 group-hover:text-green-300 transition-colors text-sm">
-                  Host a Game
-                </p>
+                <p className="font-bold text-green-400 text-sm">Host a Game</p>
                 <p className="text-gray-600 text-xs mt-1">Create a new session</p>
-              </button>
-
-              <button
-                onClick={() => setModal("join")}
-                className="group bg-blue-500/10 border border-blue-500/25 hover:bg-blue-500/20 hover:border-blue-500/50 rounded-2xl p-5 text-left transition-all"
-              >
-                <div className="w-8 h-8 bg-blue-500/20 rounded-lg flex items-center justify-center mb-3">
-                  <svg className="w-4 h-4 text-blue-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/>
-                    <polyline points="10 17 15 12 10 7"/>
-                    <line x1="15" y1="12" x2="3" y2="12"/>
-                  </svg>
-                </div>
-                <p className="font-semibold text-blue-400 group-hover:text-blue-300 transition-colors text-sm">
-                  Join a Game
-                </p>
-                <p className="text-gray-600 text-xs mt-1">Enter invite code</p>
               </button>
             </div>
 
@@ -279,30 +217,31 @@ export default function DashboardClient({
           <>
             {sessionStats.length > 0 ? (
               <>
+                {/* Lifetime P/L — hero number */}
+                <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5">
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-widest mb-2">Lifetime P/L</p>
+                  <p className={`text-5xl font-black tabular-nums ${totalProfit! >= 0 ? "text-green-400" : "text-red-400"}`}>
+                    {totalProfit! >= 0 ? `+$${totalProfit}` : `-$${Math.abs(totalProfit!)}`}
+                  </p>
+                </div>
+
                 <div className="grid grid-cols-3 gap-3">
                   <div className="bg-gray-900 border border-gray-800 rounded-2xl p-4 text-center">
                     <p className="text-xs text-gray-500 mb-1">Games</p>
-                    <p className="text-xl font-bold">{sessionStats.length}</p>
+                    <p className="text-2xl font-bold">{sessionStats.length}</p>
                   </div>
                   <div className="bg-gray-900 border border-gray-800 rounded-2xl p-4 text-center">
                     <p className="text-xs text-gray-500 mb-1">Wins</p>
-                    <p className="text-xl font-bold text-green-400">
+                    <p className="text-2xl font-bold text-green-400">
                       {sessionStats.filter((s) => s.profit > 0).length}
                     </p>
                   </div>
                   <div className="bg-gray-900 border border-gray-800 rounded-2xl p-4 text-center">
                     <p className="text-xs text-gray-500 mb-1">Losses</p>
-                    <p className="text-xl font-bold text-red-400">
+                    <p className="text-2xl font-bold text-red-400">
                       {sessionStats.filter((s) => s.profit < 0).length}
                     </p>
                   </div>
-                </div>
-
-                <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5">
-                  <p className="text-xs text-gray-500 mb-1">Lifetime P/L</p>
-                  <p className={`text-3xl font-extrabold ${totalProfit! >= 0 ? "text-green-400" : "text-red-400"}`}>
-                    {totalProfit! >= 0 ? `+$${totalProfit}` : `-$${Math.abs(totalProfit!)}`}
-                  </p>
                 </div>
 
                 <StatsChart stats={sessionStats} />
@@ -325,7 +264,7 @@ export default function DashboardClient({
                 <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-widest">Manual Entries</h3>
                 <button
                   onClick={() => setShowManualForm((v) => !v)}
-                  className="text-xs text-blue-400 hover:text-blue-300 transition-colors"
+                  className="text-xs text-blue-400 active:text-blue-300 transition-colors py-1 px-2"
                 >
                   {showManualForm ? "Cancel" : "+ Add Entry"}
                 </button>
@@ -346,7 +285,7 @@ export default function DashboardClient({
                         step="any"
                         required
                         placeholder="e.g. -20 or 50"
-                        className="w-full bg-gray-800 border border-gray-700 focus:border-blue-500 rounded-xl px-3 py-2 text-sm placeholder-gray-600 outline-none transition-colors"
+                        className="w-full bg-gray-800 border border-gray-700 focus:border-blue-500 rounded-xl px-3 py-3 text-sm placeholder-gray-600 outline-none transition-colors"
                       />
                     </div>
                     <div>
@@ -356,7 +295,7 @@ export default function DashboardClient({
                         type="date"
                         required
                         defaultValue={new Date().toISOString().split("T")[0]}
-                        className="bg-gray-800 border border-gray-700 focus:border-blue-500 rounded-xl px-3 py-2 text-sm outline-none transition-colors"
+                        className="bg-gray-800 border border-gray-700 focus:border-blue-500 rounded-xl px-3 py-3 text-sm outline-none transition-colors"
                       />
                     </div>
                   </div>
@@ -366,12 +305,12 @@ export default function DashboardClient({
                       name="notes"
                       type="text"
                       placeholder="e.g. Home game at Jake's"
-                      className="w-full bg-gray-800 border border-gray-700 focus:border-blue-500 rounded-xl px-3 py-2 text-sm placeholder-gray-600 outline-none transition-colors"
+                      className="w-full bg-gray-800 border border-gray-700 focus:border-blue-500 rounded-xl px-3 py-3 text-sm placeholder-gray-600 outline-none transition-colors"
                     />
                   </div>
                   <button
                     type="submit"
-                    className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-2.5 rounded-xl text-sm transition-colors"
+                    className="w-full bg-blue-600 active:bg-blue-500 text-white font-bold min-h-[48px] rounded-xl text-sm transition-colors"
                   >
                     Add Entry
                   </button>
@@ -381,31 +320,47 @@ export default function DashboardClient({
               {manualEntries.length > 0 ? (
                 <div className="flex flex-col gap-2">
                   {manualEntries.map((e) => (
-                    <div key={e.id} className="bg-gray-900 border border-gray-800 rounded-xl px-4 py-3 flex items-center justify-between">
-                      <div>
-                        <p className="text-sm font-medium">{e.title}</p>
-                        <p className="text-xs text-gray-500">
-                          {new Date(e.date + "T00:00:00").toLocaleDateString()} · Manual
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <span className={`text-sm font-bold ${e.profit >= 0 ? "text-green-400" : "text-red-400"}`}>
+                    <div key={e.id} className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+                      <div className="px-4 py-3.5 flex items-center justify-between">
+                        <div>
+                          <p className="text-sm font-medium">{e.title}</p>
+                          <p className="text-xs text-gray-500">
+                            {new Date(e.date + "T00:00:00").toLocaleDateString()} · Manual
+                          </p>
+                        </div>
+                        <span className={`text-lg font-bold tabular-nums ${e.profit >= 0 ? "text-green-400" : "text-red-400"}`}>
                           {e.profit >= 0 ? `+$${e.profit}` : `-$${Math.abs(e.profit)}`}
                         </span>
-                        {confirmDeleteEntry === e.id ? (
-                          <div className="flex gap-2">
-                            <button onClick={() => handleDeleteManualEntry(e.id)} className="text-xs text-red-500 hover:text-red-400 font-semibold">Remove</button>
-                            <button onClick={() => setConfirmDeleteEntry(null)} className="text-xs text-gray-500 hover:text-gray-400">Cancel</button>
-                          </div>
-                        ) : (
+                      </div>
+                      {confirmDeleteEntry === e.id ? (
+                        <div className="border-t border-gray-800 flex">
+                          <button
+                            onClick={() => setConfirmDeleteEntry(null)}
+                            className="flex-1 py-3 text-sm text-gray-400 active:bg-gray-800 transition-colors"
+                          >
+                            Cancel
+                          </button>
+                          <div className="w-px bg-gray-800" />
                           <button
                             onClick={() => handleDeleteManualEntry(e.id)}
-                            className="text-gray-600 hover:text-red-500 text-xs border border-gray-700 hover:border-red-800 px-2 py-0.5 rounded transition-colors"
+                            className="flex-1 py-3 text-sm text-red-400 font-semibold active:bg-red-950/30 transition-colors"
                           >
-                            Delete
+                            Remove
                           </button>
-                        )}
-                      </div>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => handleDeleteManualEntry(e.id)}
+                          className="w-full flex items-center justify-center gap-1.5 py-2.5 border-t border-gray-800/50 text-gray-600 active:bg-gray-800 text-xs transition-colors"
+                        >
+                          <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <polyline points="3 6 5 6 21 6"/>
+                            <path d="M19 6l-1 14H6L5 6"/>
+                            <path d="M10 11v6M14 11v6"/>
+                          </svg>
+                          Delete
+                        </button>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -423,74 +378,72 @@ export default function DashboardClient({
           <>
             {settleLoading ? (
               <div className="text-center py-16">
-                <p className="text-gray-600 text-sm">Loading settlements...</p>
+                <p className="text-gray-600 text-sm">Loading settlements…</p>
               </div>
             ) : (() => {
-              const iOwe = payments.filter((p) => p.from_user_id === userId);
-              const iAmOwed = payments.filter((p) => p.to_user_id === userId);
-              const totalIOwe = iOwe.reduce((s, p) => s + Number(p.amount), 0);
-              const totalIAmOwed = iAmOwed.reduce((s, p) => s + Number(p.amount), 0);
-              const net = totalIAmOwed - totalIOwe;
+              const groups: PersonGroup[] = [];
+              const seen = new Set<string>();
+              for (const p of payments) {
+                const otherId = p.from_user_id === userId ? p.to_user_id : p.from_user_id;
+                if (seen.has(otherId)) continue;
+                seen.add(otherId);
+                const personPayments = payments.filter((pp) => {
+                  const oid = pp.from_user_id === userId ? pp.to_user_id : pp.from_user_id;
+                  return oid === otherId;
+                });
+                const iOweTotal = personPayments.filter((pp) => pp.from_user_id === userId).reduce((s, pp) => s + Number(pp.amount), 0);
+                const theyOweTotal = personPayments.filter((pp) => pp.to_user_id === userId).reduce((s, pp) => s + Number(pp.amount), 0);
+                groups.push({
+                  counterpartyId: otherId,
+                  name: profileMap[otherId] ?? "Unknown",
+                  netToMe: theyOweTotal - iOweTotal,
+                  payments: personPayments,
+                  iOweTotal,
+                  theyOweTotal,
+                });
+              }
+              groups.sort((a, b) => a.netToMe - b.netToMe);
+
+              const totalNetToMe = groups.reduce((s, g) => s + g.netToMe, 0);
+              const totalIOwe = groups.filter((g) => g.netToMe < 0).reduce((s, g) => s + Math.abs(g.netToMe), 0);
+              const totalIAmOwed = groups.filter((g) => g.netToMe > 0).reduce((s, g) => s + g.netToMe, 0);
+
               return (
                 <>
-                  {/* Net balance */}
+                  {/* Hero summary */}
                   <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5">
-                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-widest mb-2">Net Balance</p>
-                    <p className={`text-3xl font-extrabold ${net > 0 ? "text-green-400" : net < 0 ? "text-red-400" : "text-gray-400"}`}>
-                      {net > 0 ? "+" : net < 0 ? "-" : ""}${Math.abs(net).toFixed(2)}
+                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-widest mb-2">Pending to Settle</p>
+                    <p className={`text-5xl font-black tabular-nums ${totalNetToMe > 0 ? "text-green-400" : totalNetToMe < 0 ? "text-red-400" : "text-gray-400"}`}>
+                      {totalNetToMe > 0 ? "+" : totalNetToMe < 0 ? "-" : ""}${Math.abs(totalNetToMe).toFixed(2)}
                     </p>
-                    <p className="text-xs text-gray-600 mt-1">
-                      {net > 0 ? "You are owed more than you owe" : net < 0 ? "You owe more than you are owed" : "You're all settled up"}
+                    <p className="text-xs text-gray-600 mt-2">
+                      {totalNetToMe === 0 ? "All cash transfers settled" : "Pending cash transfers — separate from your poker results"}
                     </p>
-                    <div className="flex gap-6 mt-4 pt-4 border-t border-gray-800">
-                      <div>
-                        <p className="text-xs text-gray-500 mb-1">You owe</p>
-                        <p className="text-lg font-bold text-red-400">${totalIOwe.toFixed(2)}</p>
+                    {(totalIOwe > 0 || totalIAmOwed > 0) && (
+                      <div className="flex gap-6 mt-4 pt-4 border-t border-gray-800">
+                        <div>
+                          <p className="text-xs text-gray-500 mb-1">You owe</p>
+                          <p className="text-2xl font-extrabold tabular-nums text-red-400">${totalIOwe.toFixed(2)}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-gray-500 mb-1">You are owed</p>
+                          <p className="text-2xl font-extrabold tabular-nums text-green-400">${totalIAmOwed.toFixed(2)}</p>
+                        </div>
                       </div>
-                      <div>
-                        <p className="text-xs text-gray-500 mb-1">You are owed</p>
-                        <p className="text-lg font-bold text-green-400">${totalIAmOwed.toFixed(2)}</p>
-                      </div>
-                    </div>
+                    )}
                   </div>
 
-                  {/* You Owe */}
-                  <section>
-                    <div className="flex items-center justify-between mb-3">
-                      <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-widest">You Owe</h2>
-                      <span className="text-sm font-bold text-red-400">${totalIOwe.toFixed(2)}</span>
+                  {groups.length === 0 ? (
+                    <div className="text-center py-10 border border-gray-800 border-dashed rounded-2xl">
+                      <p className="text-gray-600 text-sm">All settled up</p>
                     </div>
-                    {iOwe.length === 0 ? (
-                      <div className="text-center py-8 border border-gray-800 border-dashed rounded-2xl">
-                        <p className="text-gray-600 text-sm">Nothing to pay 🎉</p>
-                      </div>
-                    ) : (
-                      <div className="flex flex-col gap-3">
-                        {iOwe.map((p) => (
-                          <PayoutCard key={p.id} payment={p} otherName={profileMap[p.to_user_id] ?? "Unknown"} role="payer" />
-                        ))}
-                      </div>
-                    )}
-                  </section>
-
-                  {/* You Are Owed */}
-                  <section>
-                    <div className="flex items-center justify-between mb-3">
-                      <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-widest">You Are Owed</h2>
-                      <span className="text-sm font-bold text-green-400">${totalIAmOwed.toFixed(2)}</span>
+                  ) : (
+                    <div className="flex flex-col gap-3">
+                      {groups.map((group) => (
+                        <PersonRow key={group.counterpartyId} group={group} userId={userId} />
+                      ))}
                     </div>
-                    {iAmOwed.length === 0 ? (
-                      <div className="text-center py-8 border border-gray-800 border-dashed rounded-2xl">
-                        <p className="text-gray-600 text-sm">Nobody owes you</p>
-                      </div>
-                    ) : (
-                      <div className="flex flex-col gap-3">
-                        {iAmOwed.map((p) => (
-                          <PayoutCard key={p.id} payment={p} otherName={profileMap[p.from_user_id] ?? "Unknown"} role="receiver" />
-                        ))}
-                      </div>
-                    )}
-                  </section>
+                  )}
                 </>
               );
             })()}
@@ -523,6 +476,84 @@ export default function DashboardClient({
         )}
       </div>
 
+      {/* Bottom Tab Bar */}
+      <nav
+        className="fixed bottom-0 inset-x-0 z-50 bg-gray-950/95 border-t border-gray-800 backdrop-blur-sm"
+        style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
+      >
+        <div className="flex max-w-lg mx-auto">
+          {/* Play */}
+          <button
+            onClick={() => setTab("play")}
+            className={`flex-1 flex flex-col items-center justify-center gap-1 py-3 min-h-[56px] transition-colors ${
+              tab === "play" ? "text-white" : "text-gray-600 active:text-gray-400"
+            }`}
+          >
+            <svg className="w-5 h-5" viewBox="0 0 24 24" fill={tab === "play" ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2">
+              <polygon points="5 3 19 12 5 21 5 3"/>
+            </svg>
+            <span className="text-[10px] font-semibold">Play</span>
+          </button>
+
+          {/* Stats */}
+          <button
+            onClick={() => setTab("stats")}
+            className={`flex-1 flex flex-col items-center justify-center gap-1 py-3 min-h-[56px] transition-colors ${
+              tab === "stats" ? "text-white" : "text-gray-600 active:text-gray-400"
+            }`}
+          >
+            <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={tab === "stats" ? "2.5" : "2"}>
+              <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+            </svg>
+            <div className="flex items-center gap-1">
+              <span className="text-[10px] font-semibold">Stats</span>
+              {totalProfit !== null && (
+                <span className={`text-[9px] font-bold ${totalProfit >= 0 ? "text-green-400" : "text-red-400"}`}>
+                  {totalProfit >= 0 ? `+$${totalProfit}` : `-$${Math.abs(totalProfit)}`}
+                </span>
+              )}
+            </div>
+          </button>
+
+          {/* History */}
+          <button
+            onClick={() => setTab("history")}
+            className={`flex-1 flex flex-col items-center justify-center gap-1 py-3 min-h-[56px] transition-colors ${
+              tab === "history" ? "text-white" : "text-gray-600 active:text-gray-400"
+            }`}
+          >
+            <div className="relative">
+              <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={tab === "history" ? "2.5" : "2"}>
+                <circle cx="12" cy="12" r="10"/>
+                <polyline points="12 6 12 12 16 14"/>
+              </svg>
+              {historySessions.length > 0 && (
+                <span className="absolute -top-1 -right-1.5 text-[9px] font-bold text-gray-400 bg-gray-800 rounded-full px-1 leading-4">
+                  {historySessions.length}
+                </span>
+              )}
+            </div>
+            <span className="text-[10px] font-semibold">History</span>
+          </button>
+
+          {/* Settle */}
+          <button
+            onClick={() => setTab("settle")}
+            className={`flex-1 flex flex-col items-center justify-center gap-1 py-3 min-h-[56px] transition-colors ${
+              tab === "settle" ? "text-white" : "text-gray-600 active:text-gray-400"
+            }`}
+          >
+            <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={tab === "settle" ? "2.5" : "2"}>
+              <polyline points="17 1 21 5 17 9"/>
+              <path d="M3 11V9a4 4 0 0 1 4-4h14"/>
+              <polyline points="7 23 3 19 7 15"/>
+              <path d="M21 13v2a4 4 0 0 1-4 4H3"/>
+            </svg>
+            <span className="text-[10px] font-semibold">Settle</span>
+          </button>
+        </div>
+      </nav>
+
       {/* Host Modal */}
       {modal === "host" && (
         <div
@@ -531,6 +562,7 @@ export default function DashboardClient({
         >
           <div
             className="bg-gray-900 border border-gray-800 rounded-t-3xl sm:rounded-2xl w-full max-w-md p-6 pb-8"
+            style={{ paddingBottom: "max(env(safe-area-inset-bottom), 32px)" }}
             onClick={(e) => e.stopPropagation()}
           >
             <div className="w-10 h-1 bg-gray-700 rounded-full mx-auto mb-5 sm:hidden" />
@@ -538,9 +570,9 @@ export default function DashboardClient({
               <h2 className="text-lg font-bold">Host a Game</h2>
               <button
                 onClick={() => setModal(null)}
-                className="text-gray-600 hover:text-white w-7 h-7 flex items-center justify-center rounded-full hover:bg-gray-800 transition-colors"
+                className="text-gray-600 w-9 h-9 flex items-center justify-center rounded-full active:bg-gray-800 transition-colors"
               >
-                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
                 </svg>
               </button>
@@ -562,10 +594,10 @@ export default function DashboardClient({
                       key={n}
                       type="button"
                       onClick={() => setPlayerCount(n)}
-                      className={`w-10 h-10 rounded-xl text-sm font-semibold transition-colors ${
+                      className={`w-11 h-11 rounded-xl text-sm font-semibold transition-colors ${
                         playerCount === n
                           ? "bg-green-500 text-black"
-                          : "bg-gray-800 text-gray-400 hover:bg-gray-700"
+                          : "bg-gray-800 text-gray-400 active:bg-gray-700"
                       }`}
                     >
                       {n}
@@ -586,7 +618,7 @@ export default function DashboardClient({
               </div>
               <button
                 type="submit"
-                className="w-full bg-green-500 hover:bg-green-400 text-black font-bold py-3.5 rounded-xl transition-colors"
+                className="w-full bg-green-500 active:bg-green-400 text-black font-bold min-h-[52px] rounded-xl transition-colors"
               >
                 Create Game
               </button>
@@ -602,7 +634,8 @@ export default function DashboardClient({
           onClick={() => setModal(null)}
         >
           <div
-            className="bg-gray-900 border border-gray-800 rounded-t-3xl sm:rounded-2xl w-full max-w-md p-6 pb-8"
+            className="bg-gray-900 border border-gray-800 rounded-t-3xl sm:rounded-2xl w-full max-w-md p-6"
+            style={{ paddingBottom: "max(env(safe-area-inset-bottom), 32px)" }}
             onClick={(e) => e.stopPropagation()}
           >
             <div className="w-10 h-1 bg-gray-700 rounded-full mx-auto mb-5 sm:hidden" />
@@ -610,9 +643,9 @@ export default function DashboardClient({
               <h2 className="text-lg font-bold">Join a Game</h2>
               <button
                 onClick={() => setModal(null)}
-                className="text-gray-600 hover:text-white w-7 h-7 flex items-center justify-center rounded-full hover:bg-gray-800 transition-colors"
+                className="text-gray-600 w-9 h-9 flex items-center justify-center rounded-full active:bg-gray-800 transition-colors"
               >
-                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
                 </svg>
               </button>
@@ -625,15 +658,15 @@ export default function DashboardClient({
                   placeholder="ABC123"
                   maxLength={6}
                   autoComplete="off"
-                  className="w-full bg-gray-800 border border-gray-700 focus:border-blue-500 rounded-xl px-4 py-3 text-lg placeholder-gray-600 uppercase tracking-[0.3em] text-center font-mono outline-none transition-colors"
+                  className="w-full bg-gray-800 border border-gray-700 focus:border-blue-500 rounded-xl px-4 py-3 text-xl placeholder-gray-600 uppercase tracking-[0.3em] text-center font-mono outline-none transition-colors"
                 />
               </div>
               <button
                 type="submit"
                 disabled={joinLoading}
-                className="w-full bg-blue-500 hover:bg-blue-400 disabled:opacity-50 text-white font-bold py-3.5 rounded-xl transition-colors"
+                className="w-full bg-blue-500 active:bg-blue-400 disabled:opacity-50 text-white font-bold min-h-[52px] rounded-xl transition-colors"
               >
-                {joinLoading ? "Joining..." : "Join Game"}
+                {joinLoading ? "Joining…" : "Join Game"}
               </button>
             </form>
           </div>
