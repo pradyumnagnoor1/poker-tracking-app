@@ -110,6 +110,7 @@ export default async function Dashboard() {
   return (
     <DashboardClient
       fullName={user.user_metadata?.full_name ?? "Player"}
+      userId={user.id}
       sessions={sessions}
       sessionStats={sessionStats}
       isAnonymous={isAnonymous}
