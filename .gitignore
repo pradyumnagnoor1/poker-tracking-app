@@ -12,6 +12,10 @@ node_modules
 .next/
 /out/
 
+# capacitor
+frontend/out/
+frontend/.capacitor/
+
 # production
 /build
 
