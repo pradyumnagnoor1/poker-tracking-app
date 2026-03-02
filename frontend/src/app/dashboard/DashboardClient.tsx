@@ -1,8 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { createSession, joinSession, signOut, addManualEntry, deleteManualEntry } from "./actions";
+import { createClient } from "@/supabase/client";
+import PayoutCard from "../payouts/PayoutCard";
 import StatsChart from "./StatsChart";
 import SessionList from "./SessionList";
 import DemoBanner from "./DemoBanner";
@@ -25,17 +27,30 @@ type SessionStat = {
   isManual?: boolean;
 };
 
-type Tab = "play" | "stats" | "history";
+type Tab = "play" | "stats" | "history" | "settle";
+
+type Payment = {
+  id: string;
+  session_id: string;
+  from_user_id: string;
+  to_user_id: string;
+  amount: number;
+  status: "pending" | "claimed" | "confirmed";
+  created_at: string;
+  session: { id: string; title: string } | null;
+};
 
 const PLAYER_COUNTS = [2, 3, 4, 5, 6, 7, 8];
 
 export default function DashboardClient({
   fullName,
+  userId,
   sessions,
   sessionStats,
   isAnonymous,
 }: {
   fullName: string;
+  userId: string;
   sessions: Session[];
   sessionStats: SessionStat[];
   isAnonymous: boolean;
@@ -46,11 +61,70 @@ export default function DashboardClient({
   const [tab, setTab] = useState<Tab>("play");
   const [showManualForm, setShowManualForm] = useState(false);
   const [confirmDeleteEntry, setConfirmDeleteEntry] = useState<string | null>(null);
+  const [joinLoading, setJoinLoading] = useState(false);
+  const [payments, setPayments] = useState<Payment[]>([]);
+  const [profileMap, setProfileMap] = useState<Record<string, string>>({});
+  const [settleLoading, setSettleLoading] = useState(false);
+  const [settleFetched, setSettleFetched] = useState(false);
+
+  useEffect(() => {
+    if (tab !== "settle" || settleFetched) return;
+    const fetchPayments = async () => {
+      setSettleLoading(true);
+      const supabase = createClient();
+      const { data: raw } = await supabase
+        .from("payments")
+        .select("*, session:sessions(id, title)")
+        .or(`from_user_id.eq.${userId},to_user_id.eq.${userId}`)
+        .neq("status", "confirmed")
+        .order("created_at", { ascending: false });
+      const all: Payment[] = raw ?? [];
+      const otherIds = [...new Set(all.map((p) => p.from_user_id === userId ? p.to_user_id : p.from_user_id))];
+      const { data: profiles } = otherIds.length
+        ? await supabase.from("profiles").select("id, display_name").in("id", otherIds)
+        : { data: [] };
+      setProfileMap(Object.fromEntries((profiles ?? []).map((p) => [p.id, p.display_name ?? "Unknown"])));
+      setPayments(all);
+      setSettleLoading(false);
+      setSettleFetched(true);
+    };
+    fetchPayments();
+  }, [tab, settleFetched, userId]);
 
   const activeSessions = sessions.filter((s) => s.state !== "closed");
   const historySessions = sessions.filter((s) => s.state === "closed");
   const totalProfit = sessionStats.length > 0 ? sessionStats[sessionStats.length - 1].cumulative : null;
   const manualEntries = sessionStats.filter((s) => s.isManual);
+
+  const handleJoin = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const code = (e.currentTarget.elements.namedItem("code") as HTMLInputElement).value.trim().toUpperCase();
+    if (!code) return;
+    setJoinLoading(true);
+    const supabase = createClient();
+
+    // Try lobby join first
+    // join_by_code returns the session UUID — use it to redirect directly
+    const { data: lobbySessionId, error: lobbyError } = await supabase.rpc("join_by_code", { p_code: code });
+    if (!lobbyError && lobbySessionId) {
+      router.push(`/sessions/${lobbySessionId}`);
+      setModal(null);
+      setJoinLoading(false);
+      return;
+    }
+
+    // Fallback: request to join an active session
+    const { data: sessionId, error: requestError } = await supabase.rpc("request_to_join_by_code", { p_code: code });
+    if (!requestError && sessionId) {
+      router.push(`/sessions/${sessionId}`);
+      setModal(null);
+      setJoinLoading(false);
+      return;
+    }
+
+    alert(requestError?.message ?? lobbyError?.message ?? "Could not join session.");
+    setJoinLoading(false);
+  };
 
   const handleDeleteManualEntry = async (id: string) => {
     if (confirmDeleteEntry !== id) {
@@ -122,6 +196,20 @@ export default function DashboardClient({
             {historySessions.length > 0 && (
               <span className="text-xs text-gray-500">{historySessions.length}</span>
             )}
+          </button>
+          <button
+            onClick={() => setTab("settle")}
+            className={`flex items-center justify-center gap-2 flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all ${
+              tab === "settle" ? "bg-gray-700 text-white shadow" : "text-gray-500 hover:text-gray-300"
+            }`}
+          >
+            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <polyline points="17 1 21 5 17 9"/>
+              <path d="M3 11V9a4 4 0 0 1 4-4h14"/>
+              <polyline points="7 23 3 19 7 15"/>
+              <path d="M21 13v2a4 4 0 0 1-4 4H3"/>
+            </svg>
+            Settle
           </button>
         </div>
       </div>
@@ -330,6 +418,85 @@ export default function DashboardClient({
           </>
         )}
 
+        {/* SETTLE TAB */}
+        {tab === "settle" && (
+          <>
+            {settleLoading ? (
+              <div className="text-center py-16">
+                <p className="text-gray-600 text-sm">Loading settlements...</p>
+              </div>
+            ) : (() => {
+              const iOwe = payments.filter((p) => p.from_user_id === userId);
+              const iAmOwed = payments.filter((p) => p.to_user_id === userId);
+              const totalIOwe = iOwe.reduce((s, p) => s + Number(p.amount), 0);
+              const totalIAmOwed = iAmOwed.reduce((s, p) => s + Number(p.amount), 0);
+              const net = totalIAmOwed - totalIOwe;
+              return (
+                <>
+                  {/* Net balance */}
+                  <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5">
+                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-widest mb-2">Net Balance</p>
+                    <p className={`text-3xl font-extrabold ${net > 0 ? "text-green-400" : net < 0 ? "text-red-400" : "text-gray-400"}`}>
+                      {net > 0 ? "+" : net < 0 ? "-" : ""}${Math.abs(net).toFixed(2)}
+                    </p>
+                    <p className="text-xs text-gray-600 mt-1">
+                      {net > 0 ? "You are owed more than you owe" : net < 0 ? "You owe more than you are owed" : "You're all settled up"}
+                    </p>
+                    <div className="flex gap-6 mt-4 pt-4 border-t border-gray-800">
+                      <div>
+                        <p className="text-xs text-gray-500 mb-1">You owe</p>
+                        <p className="text-lg font-bold text-red-400">${totalIOwe.toFixed(2)}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-gray-500 mb-1">You are owed</p>
+                        <p className="text-lg font-bold text-green-400">${totalIAmOwed.toFixed(2)}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* You Owe */}
+                  <section>
+                    <div className="flex items-center justify-between mb-3">
+                      <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-widest">You Owe</h2>
+                      <span className="text-sm font-bold text-red-400">${totalIOwe.toFixed(2)}</span>
+                    </div>
+                    {iOwe.length === 0 ? (
+                      <div className="text-center py-8 border border-gray-800 border-dashed rounded-2xl">
+                        <p className="text-gray-600 text-sm">Nothing to pay 🎉</p>
+                      </div>
+                    ) : (
+                      <div className="flex flex-col gap-3">
+                        {iOwe.map((p) => (
+                          <PayoutCard key={p.id} payment={p} otherName={profileMap[p.to_user_id] ?? "Unknown"} role="payer" />
+                        ))}
+                      </div>
+                    )}
+                  </section>
+
+                  {/* You Are Owed */}
+                  <section>
+                    <div className="flex items-center justify-between mb-3">
+                      <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-widest">You Are Owed</h2>
+                      <span className="text-sm font-bold text-green-400">${totalIAmOwed.toFixed(2)}</span>
+                    </div>
+                    {iAmOwed.length === 0 ? (
+                      <div className="text-center py-8 border border-gray-800 border-dashed rounded-2xl">
+                        <p className="text-gray-600 text-sm">Nobody owes you</p>
+                      </div>
+                    ) : (
+                      <div className="flex flex-col gap-3">
+                        {iAmOwed.map((p) => (
+                          <PayoutCard key={p.id} payment={p} otherName={profileMap[p.from_user_id] ?? "Unknown"} role="receiver" />
+                        ))}
+                      </div>
+                    )}
+                  </section>
+                </>
+              );
+            })()}
+          </>
+        )}
+
         {/* HISTORY TAB */}
         {tab === "history" && (
           <>
@@ -450,7 +617,7 @@ export default function DashboardClient({
                 </svg>
               </button>
             </div>
-            <form action={joinSession} className="space-y-5">
+            <form onSubmit={handleJoin} className="space-y-5">
               <div>
                 <label className="text-xs font-medium text-gray-400 mb-2 block">Invite Code</label>
                 <input
@@ -463,9 +630,10 @@ export default function DashboardClient({
               </div>
               <button
                 type="submit"
-                className="w-full bg-blue-500 hover:bg-blue-400 text-white font-bold py-3.5 rounded-xl transition-colors"
+                disabled={joinLoading}
+                className="w-full bg-blue-500 hover:bg-blue-400 disabled:opacity-50 text-white font-bold py-3.5 rounded-xl transition-colors"
               >
-                Join Game
+                {joinLoading ? "Joining..." : "Join Game"}
               </button>
             </form>
           </div>
