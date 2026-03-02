@@ -3,16 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/supabase/client";
-
-type Payment = {
-  id: string;
-  session_id: string;
-  from_user_id: string;
-  to_user_id: string;
-  amount: number;
-  status: "pending" | "claimed" | "confirmed";
-  session: { id: string; title: string } | null;
-};
+import type { Payment } from "./types";
 
 type Props = {
   payment: Payment;
