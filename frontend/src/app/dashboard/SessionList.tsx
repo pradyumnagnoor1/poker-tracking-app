@@ -26,26 +26,18 @@ export default function SessionList({ sessions }: { sessions: Session[] }) {
     const router = useRouter();
     const [working, setWorking] = useState<string | null>(null);
     const [confirmId, setConfirmId] = useState<string | null>(null);
+    const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-    const handleDelete = async (e: React.MouseEvent, session: Session) => {
-        e.preventDefault();
-        e.stopPropagation();
-
-        if (confirmId !== session.id) {
-            setConfirmId(session.id);
-            return;
-        }
+    const run = async (action: () => Promise<void>, sessionId: string) => {
+        setWorking(sessionId);
         setConfirmId(null);
-        setWorking(session.id);
+        setErrorMsg(null);
         try {
-            if (session.role === "host") {
-                await deleteSession(session.id);
-            } else {
-                await removeFromHistory(session.id);
-            }
+            await action();
             router.refresh();
-        } catch {
+        } catch (err) {
             setWorking(null);
+            setErrorMsg(err instanceof Error ? err.message : "Could not remove session. Try again.");
         }
     };
 
@@ -55,6 +47,9 @@ export default function SessionList({ sessions }: { sessions: Session[] }) {
 
     return (
         <div className="flex flex-col gap-2">
+            {errorMsg && (
+                <p className="text-red-400 text-xs px-1 mb-1">{errorMsg}</p>
+            )}
             {sessions.map((s) => (
                 <div
                     key={s.id}
@@ -74,26 +69,43 @@ export default function SessionList({ sessions }: { sessions: Session[] }) {
 
                         {confirmId === s.id ? (
                             <div className="flex gap-1">
-                                <button
-                                    onClick={(e) => handleDelete(e, s)}
-                                    className="text-xs bg-red-600 hover:bg-red-500 text-white px-2 py-1 rounded font-semibold"
-                                >
-                                    {s.role === "host" ? "Delete" : "Remove"}
-                                </button>
+                                {s.role === "host" ? (
+                                    <>
+                                        <button
+                                            onClick={(e) => { e.preventDefault(); e.stopPropagation(); run(() => removeFromHistory(s.id), s.id); }}
+                                            className="text-xs bg-gray-700 hover:bg-gray-600 text-gray-200 px-2 py-1 rounded font-semibold"
+                                        >
+                                            Just me
+                                        </button>
+                                        <button
+                                            onClick={(e) => { e.preventDefault(); e.stopPropagation(); run(() => deleteSession(s.id), s.id); }}
+                                            className="text-xs bg-red-600 hover:bg-red-500 text-white px-2 py-1 rounded font-semibold"
+                                        >
+                                            Everyone
+                                        </button>
+                                    </>
+                                ) : (
+                                    <button
+                                        onClick={(e) => { e.preventDefault(); e.stopPropagation(); run(() => removeFromHistory(s.id), s.id); }}
+                                        className="text-xs bg-red-600 hover:bg-red-500 text-white px-2 py-1 rounded font-semibold"
+                                    >
+                                        Remove
+                                    </button>
+                                )}
                                 <button
                                     onClick={(e) => { e.preventDefault(); e.stopPropagation(); setConfirmId(null); }}
-                                    className="text-xs bg-gray-700 hover:bg-gray-600 text-gray-300 px-2 py-1 rounded"
+                                    className="text-xs bg-gray-800 hover:bg-gray-700 text-gray-400 px-2 py-1 rounded"
                                 >
                                     Cancel
                                 </button>
                             </div>
                         ) : (
                             <button
-                                onClick={(e) => handleDelete(e, s)}
+                                onClick={(e) => { e.preventDefault(); e.stopPropagation(); setConfirmId(s.id); }}
                                 disabled={working === s.id}
                                 className="text-gray-600 hover:text-red-500 text-xs px-2 py-1 rounded border border-gray-700 hover:border-red-800 transition-colors disabled:opacity-30"
                             >
-                                {working === s.id ? "..." : s.role === "host" ? "Delete" : "Remove"}
+                                {working === s.id ? "..." : "Remove"}
                             </button>
                         )}
                     </div>
