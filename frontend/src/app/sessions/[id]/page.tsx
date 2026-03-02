@@ -5,20 +5,13 @@ import GameView from "./game";
 import ChipCountView from "./chip-count";
 import PayoutsView from "./payouts";
 import InviteCodeButton from "./InviteCodeButton";
+import JoinRequestView from "./JoinRequestView";
 
 export default async function SessionPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/");
-
-  const { data: session } = await supabase
-    .from("sessions")
-    .select("*")
-    .eq("id", id)
-    .single();
-
-  if (!session) redirect("/dashboard");
 
   const { data: member } = await supabase
     .from("session_members")
@@ -27,7 +20,35 @@ export default async function SessionPage({ params }: { params: Promise<{ id: st
     .eq("user_id", user.id)
     .single();
 
-  if (!member) redirect("/dashboard");
+  // Non-member: check if they have a pending/denied join request for an active session
+  if (!member) {
+    const { data: joinRequest } = await supabase
+      .from("join_requests")
+      .select("status")
+      .eq("session_id", id)
+      .eq("user_id", user.id)
+      .single();
+
+    if (joinRequest && (joinRequest.status === "pending" || joinRequest.status === "denied")) {
+      return (
+        <JoinRequestView
+          sessionId={id}
+          userId={user.id}
+          initialStatus={joinRequest.status as "pending" | "denied"}
+        />
+      );
+    }
+
+    redirect("/dashboard");
+  }
+
+  const { data: session } = await supabase
+    .from("sessions")
+    .select("*")
+    .eq("id", id)
+    .single();
+
+  if (!session) redirect("/dashboard");
 
   const isHost = member.role === "host";
 
