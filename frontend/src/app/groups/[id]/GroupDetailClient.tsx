@@ -159,7 +159,7 @@ export default function GroupDetailClient({
                 sessionTitle || "Poker Night",
                 buyInDefault ? parseFloat(buyInDefault) : null,
             );
-            router.push(`/sessions/${sessionId}`);
+            router.push(`/sessions/${sessionId}/lobby`);
         } catch (err) {
             alert((err as Error).message);
             setStarting(false);
