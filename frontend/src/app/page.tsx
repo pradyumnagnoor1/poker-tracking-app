@@ -9,6 +9,28 @@ export default function Home() {
     const handleSignIn = async () => {
         setLoading(true);
         const supabase = createClient();
+
+        // On native iOS (Capacitor): open OAuth in an in-app browser with a
+        // custom URL scheme so the app receives the code back via deep link.
+        try {
+            const { Capacitor } = await import("@capacitor/core");
+            if (Capacitor.isNativePlatform()) {
+                const { Browser } = await import("@capacitor/browser");
+                const { data } = await supabase.auth.signInWithOAuth({
+                    provider: "google",
+                    options: {
+                        redirectTo: "com.stacklab.app://auth/callback",
+                        skipBrowserRedirect: true,
+                    },
+                });
+                if (data.url) await Browser.open({ url: data.url });
+                setLoading(false);
+                return;
+            }
+        } catch {
+            // Not running in Capacitor — fall through to standard web flow
+        }
+
         await supabase.auth.signInWithOAuth({
             provider: "google",
             options: {
