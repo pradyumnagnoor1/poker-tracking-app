@@ -332,7 +332,7 @@ USING (
 -- Guests (session_guests) are excluded — they have no user_id.
 --
 -- Steps:
---   a) Verify caller is session host (role = 'host')
+--   a) Verify caller is a registered session member
 --   b) INSERT into groups
 --   c) Bulk-INSERT all session_members into group_members
 --   d) Return the new group UUID
@@ -350,14 +350,13 @@ AS $$
 DECLARE
     v_group_id uuid;
 BEGIN
-    -- a) Caller must be the session host
+    -- a) Caller must be a registered session member
     IF NOT EXISTS (
         SELECT 1 FROM session_members
         WHERE session_id = p_session_id
           AND user_id    = auth.uid()
-          AND role       = 'host'
     ) THEN
-        RAISE EXCEPTION 'Only the session host can create a group from this session';
+        RAISE EXCEPTION 'Only session members can create a group from this session';
     END IF;
 
     -- b) Create the group

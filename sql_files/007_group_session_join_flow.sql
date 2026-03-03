@@ -137,11 +137,50 @@ BEGIN
 END;
 $$;
 
+-- Any registered session member can create a group from that session.
+CREATE OR REPLACE FUNCTION public.create_group_from_session(
+    p_session_id uuid,
+    p_name       text
+)
+RETURNS uuid
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_group_id uuid;
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM session_members
+        WHERE session_id = p_session_id
+          AND user_id = auth.uid()
+    ) THEN
+        RAISE EXCEPTION 'Only session members can create a group from this session';
+    END IF;
+
+    INSERT INTO groups (owner_id, name)
+    VALUES (auth.uid(), TRIM(p_name))
+    RETURNING id INTO v_group_id;
+
+    INSERT INTO group_members (group_id, user_id)
+    SELECT v_group_id, sm.user_id
+    FROM session_members sm
+    WHERE sm.session_id = p_session_id
+    ON CONFLICT (group_id, user_id) DO NOTHING;
+
+    RETURN v_group_id;
+END;
+$$;
+
 REVOKE ALL ON FUNCTION public.start_session_from_group(uuid, text, numeric) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.start_session_from_group(uuid, text, numeric) TO authenticated;
 
 REVOKE ALL ON FUNCTION public.join_active_group_session(uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.join_active_group_session(uuid) TO authenticated;
+
+REVOKE ALL ON FUNCTION public.create_group_from_session(uuid, text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.create_group_from_session(uuid, text) TO authenticated;
 
 -- Allow group members to see open group sessions before they join session_members.
 -- Without this, dashboard/group pages cannot render "open session" indicators/buttons.

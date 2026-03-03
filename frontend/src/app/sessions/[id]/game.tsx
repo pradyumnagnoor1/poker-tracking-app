@@ -1,7 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { createClient } from "@/supabase/client";
+import { createGroupFromSession } from "@/app/groups/actions";
 
 type ParticipantType = "user" | "guest";
 
@@ -55,6 +57,7 @@ export default function GameView({
     isHost: boolean;
 }) {
     const supabase = createClient();
+    const router = useRouter();
     const [players, setPlayers] = useState<Player[]>([]);
     const [rebuyAmounts, setRebuyAmounts] = useState<Record<string, string>>({});
     const [loading, setLoading] = useState(true);
@@ -71,6 +74,9 @@ export default function GameView({
     const [timerHours, setTimerHours] = useState("0");
     const [timerMinutes, setTimerMinutes] = useState("30");
     const [confirmTransferKey, setConfirmTransferKey] = useState<string | null>(null);
+    const [showCreateGroupModal, setShowCreateGroupModal] = useState(false);
+    const [groupName, setGroupName] = useState("");
+    const [creatingGroup, setCreatingGroup] = useState(false);
 
     const fetchPlayers = useCallback(async () => {
         const { data: members } = await supabase
@@ -396,6 +402,18 @@ export default function GameView({
 
     const totalPot = players.reduce((sum, p) => sum + p.total_in, 0);
 
+    const handleCreateGroup = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setCreatingGroup(true);
+        try {
+            const groupId = await createGroupFromSession(sessionId, groupName || "Poker Crew");
+            router.push(`/groups/${groupId}`);
+        } catch (err) {
+            alert((err as Error).message);
+            setCreatingGroup(false);
+        }
+    };
+
     const handleEndGame = async () => {
         if (players.length < 2) {
             alert("You need at least 2 players before ending the game.");
@@ -546,6 +564,19 @@ export default function GameView({
                 </div>
             )}
 
+            <div className="bg-gray-900 rounded-xl p-4 mb-4">
+                <h2 className="font-semibold mb-1 text-sm">Save This Group</h2>
+                <p className="text-gray-500 text-xs mb-3">
+                    Create a group from everyone in this session for quick future games.
+                </p>
+                <button
+                    onClick={() => { setGroupName(""); setShowCreateGroupModal(true); }}
+                    className="w-full bg-gray-800 active:bg-gray-700 border border-gray-700 text-white font-semibold py-2.5 rounded-xl text-sm transition-colors"
+                >
+                    Create Group from Session
+                </button>
+            </div>
+
             {/* Player list */}
             <div className="flex flex-col gap-3 mb-4">
                 {players.map((p) => {
@@ -684,6 +715,57 @@ export default function GameView({
                     );
                 })}
             </div>
+
+            {/* Create Group from Session Modal */}
+            {showCreateGroupModal && (
+                <div
+                    className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-end sm:items-center justify-center z-50 px-4"
+                    onClick={() => setShowCreateGroupModal(false)}
+                >
+                    <div
+                        className="bg-gray-900 border border-gray-800 rounded-t-3xl sm:rounded-2xl w-full max-w-md p-6"
+                        style={{ paddingBottom: "max(env(safe-area-inset-bottom), 32px)" }}
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <div className="w-10 h-1 bg-gray-700 rounded-full mx-auto mb-5 sm:hidden" />
+                        <div className="flex justify-between items-center mb-6">
+                            <h2 className="text-lg font-bold">Create Group</h2>
+                            <button
+                                onClick={() => setShowCreateGroupModal(false)}
+                                className="text-gray-600 w-9 h-9 flex items-center justify-center rounded-full active:bg-gray-800 transition-colors"
+                            >
+                                <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                    <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                                </svg>
+                            </button>
+                        </div>
+                        <div className="bg-gray-800/60 border border-gray-700 rounded-xl px-4 py-3 mb-5">
+                            <p className="text-xs text-gray-400">
+                                All registered players in this session will be added. Guests are excluded.
+                            </p>
+                        </div>
+                        <form onSubmit={handleCreateGroup} className="space-y-5">
+                            <div>
+                                <label className="text-xs font-medium text-gray-400 mb-2 block">Group Name</label>
+                                <input
+                                    value={groupName}
+                                    onChange={(e) => setGroupName(e.target.value)}
+                                    placeholder="e.g. Friday Night Crew"
+                                    autoFocus
+                                    className="w-full bg-gray-800 border border-gray-700 focus:border-green-500 rounded-xl px-4 py-3 text-sm placeholder-gray-600 outline-none transition-colors"
+                                />
+                            </div>
+                            <button
+                                type="submit"
+                                disabled={creatingGroup || !groupName.trim()}
+                                className="w-full bg-green-500 active:bg-green-400 disabled:opacity-50 text-black font-bold min-h-[52px] rounded-xl transition-colors"
+                            >
+                                {creatingGroup ? "Creating..." : "Create Group →"}
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            )}
 
             {/* End game button */}
             {isHost && (
