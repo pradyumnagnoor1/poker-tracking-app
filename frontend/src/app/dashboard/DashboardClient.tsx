@@ -2,7 +2,9 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { createSession, joinSession, signOut, addManualEntry, deleteManualEntry } from "./actions";
+import Link from "next/link";
+import { createSession, signOut, addManualEntry, deleteManualEntry } from "./actions";
+import { createGroup } from "../groups/actions";
 import { createClient } from "@/supabase/client";
 import PersonRow from "../payouts/PersonRow";
 import type { PersonGroup } from "../payouts/types";
@@ -30,6 +32,17 @@ type SessionStat = {
 
 type Tab = "play" | "stats" | "history" | "settle";
 
+type Group = {
+  id: string;
+  name: string;
+  owner_id: string;
+  created_at: string;
+  member_count: number;
+  is_owner: boolean;
+  active_session_id: string | null;
+  has_joined_active_session: boolean;
+};
+
 type Payment = {
   id: string;
   session_id: string;
@@ -49,12 +62,14 @@ export default function DashboardClient({
   sessions,
   sessionStats,
   isAnonymous,
+  groups,
 }: {
   fullName: string;
   userId: string;
   sessions: Session[];
   sessionStats: SessionStat[];
   isAnonymous: boolean;
+  groups: Group[];
 }) {
   const router = useRouter();
   const [modal, setModal] = useState<"host" | "join" | null>(null);
@@ -67,6 +82,28 @@ export default function DashboardClient({
   const [profileMap, setProfileMap] = useState<Record<string, string>>({});
   const [settleLoading, setSettleLoading] = useState(false);
   const [settleFetched, setSettleFetched] = useState(false);
+  const [showCreateGroupModal, setShowCreateGroupModal] = useState(false);
+  const [newGroupName, setNewGroupName] = useState("");
+  const [creatingGroup, setCreatingGroup] = useState(false);
+
+  useEffect(() => {
+    if (groups.length === 0) return;
+    const groupIds = new Set(groups.map((g) => g.id));
+    const supabase = createClient();
+    const channel = supabase
+      .channel(`groups-live-${userId}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "sessions" }, (payload) => {
+        const row = (payload.new ?? payload.old) as { group_id?: string | null } | null;
+        if (row?.group_id && groupIds.has(row.group_id)) {
+          router.refresh();
+        }
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [groups, router, userId]);
 
   useEffect(() => {
     if (tab !== "settle" || settleFetched) return;
@@ -92,8 +129,8 @@ export default function DashboardClient({
     fetchPayments();
   }, [tab, settleFetched, userId]);
 
-  const activeSessions = sessions.filter((s) => s.state !== "closed");
-  const historySessions = sessions.filter((s) => s.state === "closed");
+  const activeSessions = sessions.filter((s) => s.state !== "closed" && s.state !== "payouts");
+  const historySessions = sessions.filter((s) => s.state === "closed" || s.state === "payouts");
   const totalProfit = sessionStats.length > 0 ? sessionStats[sessionStats.length - 1].cumulative : null;
   const manualEntries = sessionStats.filter((s) => s.isManual);
 
@@ -132,6 +169,22 @@ export default function DashboardClient({
     setConfirmDeleteEntry(null);
     await deleteManualEntry(id);
     router.refresh();
+  };
+
+  const handleCreateGroup = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const name = newGroupName.trim();
+    if (!name) return;
+    setCreatingGroup(true);
+    try {
+      const groupId = await createGroup(name);
+      setShowCreateGroupModal(false);
+      setNewGroupName("");
+      router.push(`/groups/${groupId}`);
+    } catch (err) {
+      alert((err as Error).message);
+      setCreatingGroup(false);
+    }
   };
 
   return (
@@ -193,6 +246,72 @@ export default function DashboardClient({
                 <p className="text-gray-600 text-xs mt-1">Create a new session</p>
               </button>
             </div>
+
+            {/* My Groups — hidden for anonymous/demo users */}
+            {!isAnonymous && (
+              <section>
+                <div className="flex justify-between items-center mb-3">
+                  <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-widest">
+                    My Groups
+                  </h2>
+                  <button
+                    onClick={() => setShowCreateGroupModal(true)}
+                    className="text-xs text-green-400 active:text-green-300 font-semibold transition-colors py-1 px-2"
+                  >
+                    + Create
+                  </button>
+                </div>
+
+                {groups.length > 0 ? (
+                  <div className="flex flex-col gap-2">
+                    {groups.map((g) => (
+                      <Link
+                        key={g.id}
+                        href={`/groups/${g.id}`}
+                        className={`active:bg-gray-800 rounded-xl px-4 py-3 flex items-center justify-between transition-colors ${
+                          g.active_session_id
+                            ? "bg-green-950/20 border border-green-500/40 shadow-[0_0_0_1px_rgba(34,197,94,0.15),0_0_18px_rgba(34,197,94,0.15)]"
+                            : "bg-gray-900 border border-gray-800"
+                        }`}
+                      >
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <p className="text-sm font-medium">{g.name}</p>
+                            {g.active_session_id && (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full border border-green-500/35 text-green-300 bg-green-500/10">
+                                <span className="w-1.5 h-1.5 rounded-full bg-green-400" />
+                                Active Session
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs text-gray-500 mt-0.5">
+                            {g.member_count} member{g.member_count !== 1 ? "s" : ""}
+                            {g.is_owner ? " · Owner" : ""}
+                            {g.active_session_id && g.has_joined_active_session ? " · Joined" : ""}
+                          </p>
+                        </div>
+                        <svg
+                          className="w-4 h-4 text-gray-600 shrink-0"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                        >
+                          <polyline points="9 18 15 12 9 6" />
+                        </svg>
+                      </Link>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-8 border border-gray-800 border-dashed rounded-2xl">
+                    <p className="text-gray-600 text-sm">No groups yet.</p>
+                    <p className="text-gray-700 text-xs mt-1">
+                      Create a group to quickly start games with regular players.
+                    </p>
+                  </div>
+                )}
+              </section>
+            )}
 
             {activeSessions.length > 0 && (
               <section>
@@ -621,6 +740,52 @@ export default function DashboardClient({
                 className="w-full bg-green-500 active:bg-green-400 text-black font-bold min-h-[52px] rounded-xl transition-colors"
               >
                 Create Game
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Create Group Modal */}
+      {showCreateGroupModal && (
+        <div
+          className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-end sm:items-center justify-center z-50 px-4"
+          onClick={() => setShowCreateGroupModal(false)}
+        >
+          <div
+            className="bg-gray-900 border border-gray-800 rounded-t-3xl sm:rounded-2xl w-full max-w-md p-6"
+            style={{ paddingBottom: "max(env(safe-area-inset-bottom), 32px)" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="w-10 h-1 bg-gray-700 rounded-full mx-auto mb-5 sm:hidden" />
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-lg font-bold">Create Group</h2>
+              <button
+                onClick={() => setShowCreateGroupModal(false)}
+                className="text-gray-600 w-9 h-9 flex items-center justify-center rounded-full active:bg-gray-800 transition-colors"
+              >
+                <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
+              </button>
+            </div>
+            <form onSubmit={handleCreateGroup} className="space-y-5">
+              <div>
+                <label className="text-xs font-medium text-gray-400 mb-2 block">Group Name</label>
+                <input
+                  value={newGroupName}
+                  onChange={(e) => setNewGroupName(e.target.value)}
+                  placeholder="e.g. Friday Night Crew"
+                  autoFocus
+                  className="w-full bg-gray-800 border border-gray-700 focus:border-green-500 rounded-xl px-4 py-3 text-sm placeholder-gray-600 outline-none transition-colors"
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={creatingGroup || !newGroupName.trim()}
+                className="w-full bg-green-500 active:bg-green-400 disabled:opacity-50 text-black font-bold min-h-[52px] rounded-xl transition-colors"
+              >
+                {creatingGroup ? "Creating..." : "Create Group"}
               </button>
             </form>
           </div>

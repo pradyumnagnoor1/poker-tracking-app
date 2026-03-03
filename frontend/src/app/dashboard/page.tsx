@@ -14,6 +14,28 @@ type Membership = {
   };
 };
 
+type GroupMembership = {
+  group_id: string;
+  joined_at: string;
+  groups: {
+    id: string;
+    name: string;
+    owner_id: string;
+    created_at: string;
+  };
+};
+
+type Group = {
+  id: string;
+  name: string;
+  owner_id: string;
+  created_at: string;
+  member_count: number;
+  is_owner: boolean;
+  active_session_id: string | null;
+  has_joined_active_session: boolean;
+};
+
 type SessionStat = {
   id: string;
   title: string;
@@ -40,6 +62,66 @@ export default async function Dashboard() {
   })) || [];
 
   const isAnonymous = user.is_anonymous === true;
+
+  // Fetch groups the user belongs to (owned or member)
+  const { data: groupMemberships } = await supabase
+    .from("group_members")
+    .select("group_id, joined_at, groups(id, name, owner_id, created_at)")
+    .eq("user_id", user.id)
+    .order("joined_at", { ascending: false });
+
+  const groupIds = (groupMemberships as GroupMembership[] | null)?.map((gm) => gm.group_id) ?? [];
+
+  let groups: Group[] = [];
+  if (groupIds.length > 0) {
+    const [{ data: counts }, { data: activeGroupSessions }] = await Promise.all([
+      supabase
+        .from("group_members")
+        .select("group_id")
+        .in("group_id", groupIds),
+      supabase
+        .from("sessions")
+        .select("id, group_id, created_at")
+        .in("group_id", groupIds)
+        .in("state", ["lobby", "active"])
+        .order("created_at", { ascending: false }),
+    ]);
+
+    const countMap: Record<string, number> = {};
+    (counts ?? []).forEach((r: { group_id: string }) => {
+      countMap[r.group_id] = (countMap[r.group_id] ?? 0) + 1;
+    });
+
+    const activeSessionByGroup: Record<string, string> = {};
+    (activeGroupSessions ?? []).forEach((row: { id: string; group_id: string }) => {
+      if (!activeSessionByGroup[row.group_id]) {
+        activeSessionByGroup[row.group_id] = row.id;
+      }
+    });
+
+    const activeSessionIds = Object.values(activeSessionByGroup);
+    const { data: myActiveMemberships } = activeSessionIds.length > 0
+      ? await supabase
+        .from("session_members")
+        .select("session_id")
+        .in("session_id", activeSessionIds)
+        .eq("user_id", user.id)
+      : { data: [] };
+
+    const joinedActiveSet = new Set(
+      (myActiveMemberships ?? []).map((row: { session_id: string }) => row.session_id)
+    );
+
+    groups = (groupMemberships as GroupMembership[] | null)?.map((gm) => ({
+      ...gm.groups,
+      member_count: countMap[gm.group_id] ?? 0,
+      is_owner: gm.groups.owner_id === user.id,
+      active_session_id: activeSessionByGroup[gm.group_id] ?? null,
+      has_joined_active_session: activeSessionByGroup[gm.group_id]
+        ? joinedActiveSet.has(activeSessionByGroup[gm.group_id])
+        : false,
+    })) ?? [];
+  }
 
   const completedSessions = sessions.filter(
     (s) => s.state === "payouts" || s.state === "closed"
@@ -114,6 +196,7 @@ export default async function Dashboard() {
       sessions={sessions}
       sessionStats={sessionStats}
       isAnonymous={isAnonymous}
+      groups={groups}
     />
   );
 }
