@@ -1,10 +1,19 @@
 import { NextResponse } from "next/server";
+import { headers } from "next/headers";
 import { createClient } from "@/supabase/server";
 
 export async function GET(request: Request) {
-  const { searchParams, origin } = new URL(request.url);
+  const { searchParams } = new URL(request.url);
   const code = searchParams.get("code");
   const next = searchParams.get("next") ?? "/dashboard";
+
+  // Construct origin robustly — Vercel forwards the real host via x-forwarded-host
+  const hdrs = await headers();
+  const forwardedHost = hdrs.get("x-forwarded-host");
+  const proto = hdrs.get("x-forwarded-proto") ?? "https";
+  const origin = forwardedHost
+    ? `${proto}://${forwardedHost}`
+    : new URL(request.url).origin;
 
   if (code) {
     const supabase = await createClient();

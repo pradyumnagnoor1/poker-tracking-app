@@ -1,9 +1,16 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import CapacitorAuthHandler from "./CapacitorAuthHandler";
 
 export const metadata: Metadata = {
   title: "StackLab",
   description: "The easiest way to run your home poker game.",
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
 };
 
 export default function RootLayout({
@@ -13,7 +20,10 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className="bg-gray-950 text-white antialiased">{children}</body>
+      <body className="bg-gray-950 text-white antialiased">
+        <CapacitorAuthHandler />
+        {children}
+      </body>
     </html>
   );
 }

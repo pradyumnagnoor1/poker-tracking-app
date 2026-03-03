@@ -57,7 +57,8 @@ export default function PayoutCard({ payment, otherName, role }: Props) {
       : "border-gray-800 bg-gray-800/20";
 
   return (
-    <div className={`border rounded-xl p-3 transition-colors ${cardStyle}`}>
+    <div className={`border rounded-xl p-4 transition-colors ${cardStyle}`}>
+      {/* Header: name + amount */}
       <div className="flex justify-between items-start gap-3">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
@@ -67,14 +68,15 @@ export default function PayoutCard({ payment, otherName, role }: Props) {
           {payment.session && (
             <Link
               href={`/sessions/${payment.session.id}`}
-              className="text-xs text-gray-500 hover:text-gray-300 transition-colors mt-0.5 block truncate"
+              className="text-xs text-gray-500 mt-0.5 block truncate"
             >
               {payment.session.title}
             </Link>
           )}
         </div>
+        {/* Money value — dominant */}
         <span
-          className={`text-base font-bold shrink-0 ${
+          className={`text-2xl font-extrabold tabular-nums shrink-0 ${
             role === "payer" ? "text-red-400" : "text-green-400"
           }`}
         >
@@ -82,8 +84,9 @@ export default function PayoutCard({ payment, otherName, role }: Props) {
         </span>
       </div>
 
+      {/* Actions */}
       {status !== "confirmed" && (
-        <div className="mt-2.5 pt-2.5 border-t border-gray-800/60">
+        <div className="mt-3 pt-3 border-t border-gray-800/60">
           {error && (
             <p className="text-xs text-red-400 mb-2 text-center">{error}</p>
           )}
@@ -92,14 +95,14 @@ export default function PayoutCard({ payment, otherName, role }: Props) {
             <button
               onClick={handleClaim}
               disabled={loading}
-              className="w-full bg-blue-700 hover:bg-blue-600 disabled:opacity-50 text-white text-xs font-semibold py-2 px-4 rounded-lg transition-colors"
+              className="w-full bg-blue-700 active:bg-blue-600 disabled:opacity-50 text-white text-sm font-semibold min-h-[48px] px-4 rounded-xl transition-colors"
             >
-              {loading ? "Updating..." : "Mark as Paid"}
+              {loading ? "Updating…" : "Mark as Paid"}
             </button>
           )}
 
           {role === "payer" && status === "claimed" && (
-            <p className="text-center text-xs text-yellow-500/80">
+            <p className="text-center text-xs text-yellow-500/80 py-1">
               Sent — awaiting confirmation from {otherName}
             </p>
           )}
@@ -108,14 +111,14 @@ export default function PayoutCard({ payment, otherName, role }: Props) {
             <button
               onClick={handleConfirm}
               disabled={loading}
-              className="w-full bg-green-700 hover:bg-green-600 disabled:opacity-50 text-white text-xs font-semibold py-2 px-4 rounded-lg transition-colors"
+              className="w-full bg-green-700 active:bg-green-600 disabled:opacity-50 text-white text-sm font-semibold min-h-[48px] px-4 rounded-xl transition-colors"
             >
-              {loading ? "Confirming..." : "Confirm Received"}
+              {loading ? "Confirming…" : "Confirm Received"}
             </button>
           )}
 
           {role === "receiver" && status === "pending" && (
-            <p className="text-center text-xs text-gray-600">
+            <p className="text-center text-xs text-gray-600 py-1">
               Waiting for {otherName} to mark as paid
             </p>
           )}
