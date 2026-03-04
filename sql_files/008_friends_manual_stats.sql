@@ -16,8 +16,9 @@ ALTER TABLE public.manual_game_entries
 -- Step 2: get_friend_stats
 --
 -- Returns aggregate stats for a given user, combining:
---   - Tracked personal sessions (status = 'ended')
---   - Manual game entries where is_public = true
+--   - Group poker sessions (sessions + buyins + chip_counts)
+--   - Personal timer/manual sessions (personal_sessions)
+--   - Public manual game entries (manual_game_entries)
 -- ─────────────────────────────────────────────────────────────
 CREATE OR REPLACE FUNCTION public.get_friend_stats(p_friend_id UUID)
 RETURNS TABLE (
@@ -38,7 +39,22 @@ AS $$
     COALESCE(ROUND(SUM(profit), 2), 0)             AS total_profit,
     COALESCE(ROUND(AVG(profit), 2), 0)             AS average_profit
   FROM (
-    -- Tracked personal sessions
+    -- Group poker sessions tracked via sessions/buyins/chip_counts
+    SELECT ROUND(cc.final_stack - COALESCE(b.total_buyin, 0), 2) AS profit
+    FROM public.chip_counts cc
+    JOIN public.sessions s ON s.id = cc.session_id
+    LEFT JOIN (
+      SELECT session_id, SUM(amount) AS total_buyin
+      FROM public.buyins
+      WHERE user_id = p_friend_id
+      GROUP BY session_id
+    ) b ON b.session_id = cc.session_id
+    WHERE cc.user_id = p_friend_id
+      AND s.state IN ('payouts', 'closed')
+
+    UNION ALL
+
+    -- Personal timer/manual sessions
     SELECT ROUND(cash_out - buy_in, 2) AS profit
     FROM public.personal_sessions
     WHERE user_id = p_friend_id
@@ -47,7 +63,7 @@ AS $$
 
     UNION ALL
 
-    -- Manual entries (public only)
+    -- Public manual entries
     SELECT profit
     FROM public.manual_game_entries
     WHERE user_id = p_friend_id

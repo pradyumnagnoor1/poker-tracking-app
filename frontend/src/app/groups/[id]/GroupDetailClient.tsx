@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/supabase/client";
 import {
-    addGroupMember,
+    sendGroupInvite,
     removeGroupMember,
     deleteGroup,
     startGroupSession,
@@ -120,12 +120,13 @@ export default function GroupDetailClient({
         }
     };
 
+    const [inviteSentIds, setInviteSentIds] = useState<Set<string>>(new Set());
+
     const handleAddMember = async (userId: string) => {
         setAddingUserId(userId);
         try {
-            await addGroupMember(group.id, userId);
-            closeAddModal();
-            router.refresh();
+            await sendGroupInvite(group.id, userId);
+            setInviteSentIds((prev) => new Set(prev).add(userId));
         } catch (err) {
             alert((err as Error).message);
         } finally {
@@ -409,10 +410,10 @@ export default function GroupDetailClient({
                                             </p>
                                             <button
                                                 onClick={() => handleAddMember(p.id)}
-                                                disabled={addingUserId === p.id}
+                                                disabled={addingUserId === p.id || inviteSentIds.has(p.id)}
                                                 className="text-xs bg-green-600 active:bg-green-500 disabled:opacity-50 text-white font-semibold px-3 py-1.5 rounded-lg transition-colors"
                                             >
-                                                {addingUserId === p.id ? "Adding..." : "Add"}
+                                                {addingUserId === p.id ? "Sending..." : inviteSentIds.has(p.id) ? "Invited!" : "Invite"}
                                             </button>
                                         </div>
                                     ))}

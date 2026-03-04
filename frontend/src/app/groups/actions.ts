@@ -26,17 +26,31 @@ export async function createGroup(name: string) {
     return group.id as string;
 }
 
-export async function addGroupMember(groupId: string, userId: string) {
+export async function sendGroupInvite(groupId: string, inviteeId: string) {
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) redirect("/");
 
     const { error } = await supabase
-        .from("group_members")
-        .insert({ group_id: groupId, user_id: userId });
+        .from("group_invites")
+        .insert({ group_id: groupId, inviter_id: user.id, invitee_id: inviteeId });
     if (error) throw new Error(error.message);
 
     revalidatePath(`/groups/${groupId}`);
+}
+
+export async function respondGroupInvite(inviteId: string, accept: boolean) {
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) redirect("/");
+
+    const { error } = await supabase.rpc("respond_group_invite", {
+        p_invite_id: inviteId,
+        p_accept: accept,
+    });
+    if (error) throw new Error(error.message);
+
+    revalidatePath("/dashboard");
 }
 
 export async function deleteGroup(groupId: string) {

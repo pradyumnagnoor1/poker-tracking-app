@@ -202,6 +202,30 @@ export default async function Dashboard() {
     (s) => s.role === "host" && (s.state === "lobby" || s.state === "active")
   );
 
+  // Fetch pending group invites for this user
+  const { data: rawGroupInvites } = await supabase
+    .from("group_invites")
+    .select("id, group_id, inviter_id, groups(name), profiles!group_invites_inviter_id_fkey(display_name)")
+    .eq("invitee_id", user!.id)
+    .eq("status", "pending");
+
+  const pendingGroupInvites = (rawGroupInvites ?? []).map((i: {
+    id: string;
+    group_id: string;
+    inviter_id: string;
+    groups: { name: string } | { name: string }[] | null;
+    profiles: { display_name: string } | { display_name: string }[] | null;
+  }) => {
+    const group = Array.isArray(i.groups) ? i.groups[0] : i.groups;
+    const inviter = Array.isArray(i.profiles) ? i.profiles[0] : i.profiles;
+    return {
+      id: i.id,
+      group_id: i.group_id,
+      group_name: group?.name ?? "Unknown Group",
+      inviter_name: inviter?.display_name ?? "Someone",
+    };
+  });
+
   return (
     <DashboardClient
       fullName={user!.user_metadata?.full_name ?? "Player"}
@@ -214,6 +238,7 @@ export default async function Dashboard() {
       pendingFriendCount={pendingFriendCount ?? 0}
       pendingInviteCount={pendingInviteCount ?? 0}
       activeHostSessionId={activeHostSession?.id ?? null}
+      pendingGroupInvites={pendingGroupInvites}
     />
   );
 }
