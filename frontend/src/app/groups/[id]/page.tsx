@@ -68,6 +68,20 @@ export default async function GroupDetailPage({
         hasJoinedActiveSession = Boolean(membership);
     }
 
+    // Fetch accepted friends to show in Add Member modal
+    const { data: friendships } = await supabase
+        .from("friendships")
+        .select("requester_id, addressee_id, requester:profiles!friendships_requester_id_fkey(id, display_name, username), addressee:profiles!friendships_addressee_id_fkey(id, display_name, username)")
+        .or(`requester_id.eq.${user.id},addressee_id.eq.${user.id}`)
+        .eq("status", "accepted");
+
+    const friends = (friendships ?? []).map((f) => {
+        const requester = Array.isArray(f.requester) ? f.requester[0] : f.requester;
+        const addressee = Array.isArray(f.addressee) ? f.addressee[0] : f.addressee;
+        const other = f.requester_id === user.id ? addressee : requester;
+        return { id: other?.id ?? "", display_name: other?.display_name ?? null, username: other?.username ?? null };
+    }).filter((f) => f.id);
+
     return (
         <GroupDetailClient
             group={group}
@@ -76,6 +90,7 @@ export default async function GroupDetailPage({
             isOwner={group.owner_id === user.id}
             activeSessionId={activeSession?.id ?? null}
             hasJoinedActiveSession={hasJoinedActiveSession}
+            friends={friends}
         />
     );
 }

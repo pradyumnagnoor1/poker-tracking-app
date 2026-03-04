@@ -28,6 +28,13 @@ type Group = {
 type ProfileResult = {
     id: string;
     display_name: string | null;
+    username: string | null;
+};
+
+type Friend = {
+    id: string;
+    display_name: string | null;
+    username: string | null;
 };
 
 export default function GroupDetailClient({
@@ -37,6 +44,7 @@ export default function GroupDetailClient({
     isOwner,
     activeSessionId,
     hasJoinedActiveSession,
+    friends,
 }: {
     group: Group;
     members: Member[];
@@ -44,6 +52,7 @@ export default function GroupDetailClient({
     isOwner: boolean;
     activeSessionId: string | null;
     hasJoinedActiveSession: boolean;
+    friends: Friend[];
 }) {
     const router = useRouter();
     const supabase = createClient();
@@ -374,18 +383,47 @@ export default function GroupDetailClient({
                             </button>
                         </div>
 
-                        <div className="space-y-4">
+                        <div className="space-y-5">
+                            {/* Friends list */}
+                            {(() => {
+                                const availableFriends = friends.filter((f) => !memberIds.has(f.id));
+                                if (availableFriends.length === 0) return null;
+                                return (
+                                    <div>
+                                        <label className="text-xs font-medium text-gray-400 mb-2 block">Friends</label>
+                                        <div className="flex flex-col gap-2">
+                                            {availableFriends.map((f) => (
+                                                <div
+                                                    key={f.id}
+                                                    className="bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 flex items-center justify-between"
+                                                >
+                                                    <div>
+                                                        <p className="text-sm font-medium">{f.display_name ?? f.username ?? "Unknown"}</p>
+                                                        {f.username && <p className="text-xs text-gray-500">@{f.username}</p>}
+                                                    </div>
+                                                    <button
+                                                        onClick={() => handleAddMember(f.id)}
+                                                        disabled={addingUserId === f.id || inviteSentIds.has(f.id)}
+                                                        className="text-xs bg-green-600 active:bg-green-500 disabled:opacity-50 text-white font-semibold px-3 py-1.5 rounded-lg transition-colors"
+                                                    >
+                                                        {addingUserId === f.id ? "Sending..." : inviteSentIds.has(f.id) ? "Invited!" : "Invite"}
+                                                    </button>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                );
+                            })()}
+
+                            {/* Search non-friends by username */}
                             <div>
-                                <label className="text-xs font-medium text-gray-400 mb-2 block">
-                                    Search by display name
-                                </label>
+                                <label className="text-xs font-medium text-gray-400 mb-2 block">Search by username</label>
                                 <div className="flex gap-2">
                                     <input
                                         value={searchQuery}
                                         onChange={(e) => setSearchQuery(e.target.value)}
                                         onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-                                        placeholder="e.g. Alex"
-                                        autoFocus
+                                        placeholder="@username"
                                         className="flex-1 bg-gray-800 border border-gray-700 focus:border-green-500 rounded-xl px-4 py-3 text-sm placeholder-gray-600 outline-none transition-colors"
                                     />
                                     <button
@@ -405,9 +443,10 @@ export default function GroupDetailClient({
                                             key={p.id}
                                             className="bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 flex items-center justify-between"
                                         >
-                                            <p className="text-sm font-medium">
-                                                {p.display_name ?? "Unknown"}
-                                            </p>
+                                            <div>
+                                                <p className="text-sm font-medium">{p.display_name ?? p.username ?? "Unknown"}</p>
+                                                {p.username && <p className="text-xs text-gray-500">@{p.username}</p>}
+                                            </div>
                                             <button
                                                 onClick={() => handleAddMember(p.id)}
                                                 disabled={addingUserId === p.id || inviteSentIds.has(p.id)}
@@ -421,9 +460,7 @@ export default function GroupDetailClient({
                             )}
 
                             {searchResults.length === 0 && searchQuery.trim().length >= 2 && !searching && (
-                                <p className="text-gray-600 text-xs text-center py-4">
-                                    No users found. They must sign up and set a display name first.
-                                </p>
+                                <p className="text-gray-600 text-xs text-center py-2">No users found.</p>
                             )}
                         </div>
                     </div>

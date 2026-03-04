@@ -140,13 +140,15 @@ export async function searchProfiles(query: string) {
     const trimmed = query.trim();
     if (trimmed.length < 2) return [];
 
+    const search = trimmed.startsWith("@") ? trimmed.slice(1) : trimmed;
+
     const { data, error } = await supabase
         .from("profiles")
-        .select("id, display_name")
-        .ilike("display_name", `%${trimmed}%`)
+        .select("id, display_name, username")
+        .or(`username.ilike.%${search}%,display_name.ilike.%${search}%`)
         .neq("id", user.id)
         .limit(10);
     if (error) throw new Error(error.message);
 
-    return (data ?? []) as { id: string; display_name: string | null }[];
+    return (data ?? []) as { id: string; display_name: string | null; username: string | null }[];
 }
