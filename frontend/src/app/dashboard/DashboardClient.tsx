@@ -11,6 +11,8 @@ import type { PersonGroup } from "../payouts/types";
 import StatsChart from "./StatsChart";
 import SessionList from "./SessionList";
 import DemoBanner from "./DemoBanner";
+import FriendsTab from "./FriendsTab";
+import UsernameSetupModal from "./UsernameSetupModal";
 
 type Session = {
   id: string;
@@ -30,7 +32,7 @@ type SessionStat = {
   isManual?: boolean;
 };
 
-type Tab = "play" | "stats" | "history" | "settle";
+type Tab = "play" | "stats" | "history" | "settle" | "friends";
 
 type Group = {
   id: string;
@@ -63,6 +65,10 @@ export default function DashboardClient({
   sessionStats,
   isAnonymous,
   groups,
+  username,
+  pendingFriendCount,
+  pendingInviteCount,
+  activeHostSessionId,
 }: {
   fullName: string;
   userId: string;
@@ -70,6 +76,10 @@ export default function DashboardClient({
   sessionStats: SessionStat[];
   isAnonymous: boolean;
   groups: Group[];
+  username: string | null;
+  pendingFriendCount: number;
+  pendingInviteCount: number;
+  activeHostSessionId: string | null;
 }) {
   const router = useRouter();
   const [modal, setModal] = useState<"host" | "join" | null>(null);
@@ -189,17 +199,33 @@ export default function DashboardClient({
 
   return (
     <main className="min-h-screen bg-gray-950 text-white">
+      {/* Username setup modal for existing users without a username */}
+      {!isAnonymous && !username && <UsernameSetupModal />}
+
       {/* Header */}
       <header className="px-5 pt-6 pb-4 max-w-lg mx-auto flex justify-between items-center">
         <div>
           <h1 className="text-xl font-bold">
             Stack<span className="text-green-400">Lab</span>
           </h1>
-          <p className="text-gray-500 text-sm">{isAnonymous ? "Demo User" : fullName}</p>
+          <p className="text-gray-500 text-sm">{isAnonymous ? "Demo User" : (username ? `@${username}` : fullName)}</p>
         </div>
-        <form action={signOut}>
-          <button className="text-gray-500 text-sm active:text-white transition-colors py-2 px-1">Sign Out</button>
-        </form>
+        <div className="flex items-center gap-2">
+          {!isAnonymous && (
+            <Link
+              href="/settings"
+              className="w-9 h-9 flex items-center justify-center rounded-full text-gray-500 active:bg-gray-800 active:text-white transition-colors"
+            >
+              <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <circle cx="12" cy="12" r="3"/>
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+              </svg>
+            </Link>
+          )}
+          <form action={signOut}>
+            <button className="text-gray-500 text-sm active:text-white transition-colors py-2 px-1">Sign Out</button>
+          </form>
+        </div>
       </header>
 
       {isAnonymous && (
@@ -569,6 +595,11 @@ export default function DashboardClient({
           </>
         )}
 
+        {/* FRIENDS TAB */}
+        {tab === "friends" && !isAnonymous && (
+          <FriendsTab userId={userId} activeSessionId={activeHostSessionId} />
+        )}
+
         {/* HISTORY TAB */}
         {tab === "history" && (
           <>
@@ -613,6 +644,31 @@ export default function DashboardClient({
             </svg>
             <span className="text-[10px] font-semibold">Play</span>
           </button>
+
+          {/* Friends */}
+          {!isAnonymous && (
+            <button
+              onClick={() => setTab("friends")}
+              className={`flex-1 flex flex-col items-center justify-center gap-1 py-3 min-h-[56px] transition-colors ${
+                tab === "friends" ? "text-white" : "text-gray-600 active:text-gray-400"
+              }`}
+            >
+              <div className="relative">
+                <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={tab === "friends" ? "2.5" : "2"}>
+                  <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                  <circle cx="9" cy="7" r="4"/>
+                  <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+                  <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                </svg>
+                {(pendingFriendCount + pendingInviteCount) > 0 && (
+                  <span className="absolute -top-1 -right-2 text-[9px] font-bold bg-red-500 text-white rounded-full min-w-[14px] h-3.5 flex items-center justify-center px-0.5">
+                    {pendingFriendCount + pendingInviteCount}
+                  </span>
+                )}
+              </div>
+              <span className="text-[10px] font-semibold">Friends</span>
+            </button>
+          )}
 
           {/* Stats */}
           <button

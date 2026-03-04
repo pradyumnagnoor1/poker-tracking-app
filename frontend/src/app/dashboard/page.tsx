@@ -50,6 +50,13 @@ export default async function Dashboard() {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/");
 
+  // Fetch profile (username) + pending friend/invite counts in parallel
+  const [{ data: profile }, { count: pendingFriendCount }, { count: pendingInviteCount }] = await Promise.all([
+    supabase.from("profiles").select("username, display_name").eq("id", user.id).single(),
+    supabase.from("friendships").select("*", { count: "exact", head: true }).eq("addressee_id", user.id).eq("status", "pending"),
+    supabase.from("session_invites").select("*", { count: "exact", head: true }).eq("invitee_id", user.id).eq("status", "pending"),
+  ]);
+
   const { data: memberships } = await supabase
     .from("session_members")
     .select("session_id, role, sessions(id, title, state, invite_code, created_at)")
@@ -189,14 +196,23 @@ export default async function Dashboard() {
     return { ...s, cumulative: running };
   });
 
+  // Find user's own active/lobby hosted session for inviting friends
+  const activeHostSession = sessions.find(
+    (s) => s.role === "host" && (s.state === "lobby" || s.state === "active")
+  );
+
   return (
     <DashboardClient
-      fullName={user.user_metadata?.full_name ?? "Player"}
-      userId={user.id}
+      fullName={user!.user_metadata?.full_name ?? "Player"}
+      userId={user!.id}
       sessions={sessions}
       sessionStats={sessionStats}
       isAnonymous={isAnonymous}
       groups={groups}
+      username={profile?.username ?? null}
+      pendingFriendCount={pendingFriendCount ?? 0}
+      pendingInviteCount={pendingInviteCount ?? 0}
+      activeHostSessionId={activeHostSession?.id ?? null}
     />
   );
 }
