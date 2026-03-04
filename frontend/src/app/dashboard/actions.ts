@@ -106,14 +106,31 @@ export async function addManualEntry(formData: FormData) {
 
     if (isNaN(profit)) throw new Error("Invalid profit value");
 
+    const isPublic = (formData.get("isPublic") as string) !== "false";
+
     const { error } = await supabase.from("manual_game_entries").insert({
         user_id: user.id,
         profit,
         played_at: playedAt,
         notes,
+        is_public: isPublic,
     });
 
     if (error) throw new Error(error.message);
+    revalidatePath("/dashboard");
+}
+
+export async function toggleManualEntryVisibility(id: string, isPublic: boolean) {
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) redirect("/");
+
+    await supabase
+        .from("manual_game_entries")
+        .update({ is_public: isPublic })
+        .eq("id", id)
+        .eq("user_id", user.id);
+
     revalidatePath("/dashboard");
 }
 

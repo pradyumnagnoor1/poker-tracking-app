@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { createSession, signOut, addManualEntry, deleteManualEntry } from "./actions";
+import { createSession, signOut, addManualEntry, deleteManualEntry, toggleManualEntryVisibility } from "./actions";
 import { createGroup } from "../groups/actions";
 import { createClient } from "@/supabase/client";
 import PersonRow from "../payouts/PersonRow";
@@ -30,6 +30,7 @@ type SessionStat = {
   profit: number;
   cumulative: number;
   isManual?: boolean;
+  isPublic?: boolean;
 };
 
 type Tab = "play" | "stats" | "history" | "settle" | "friends";
@@ -86,6 +87,7 @@ export default function DashboardClient({
   const [playerCount, setPlayerCount] = useState(6);
   const [tab, setTab] = useState<Tab>("play");
   const [showManualForm, setShowManualForm] = useState(false);
+  const [shareWithFriends, setShareWithFriends] = useState(true);
   const [confirmDeleteEntry, setConfirmDeleteEntry] = useState<string | null>(null);
   const [joinLoading, setJoinLoading] = useState(false);
   const [payments, setPayments] = useState<Payment[]>([]);
@@ -143,6 +145,9 @@ export default function DashboardClient({
   const historySessions = sessions.filter((s) => s.state === "closed" || s.state === "payouts");
   const totalProfit = sessionStats.length > 0 ? sessionStats[sessionStats.length - 1].cumulative : null;
   const manualEntries = sessionStats.filter((s) => s.isManual);
+  const [entryPublicState, setEntryPublicState] = useState<Record<string, boolean>>(
+    Object.fromEntries(manualEntries.map((e) => [e.id, e.isPublic ?? true]))
+  );
 
   const handleJoin = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -178,6 +183,13 @@ export default function DashboardClient({
     }
     setConfirmDeleteEntry(null);
     await deleteManualEntry(id);
+    router.refresh();
+  };
+
+  const handleTogglePublic = async (id: string) => {
+    const newVal = !(entryPublicState[id] ?? true);
+    setEntryPublicState((prev) => ({ ...prev, [id]: newVal }));
+    await toggleManualEntryVisibility(id, newVal);
     router.refresh();
   };
 
@@ -418,9 +430,10 @@ export default function DashboardClient({
               {showManualForm && (
                 <form
                   action={addManualEntry}
-                  onSubmit={() => setShowManualForm(false)}
+                  onSubmit={() => { setShowManualForm(false); setShareWithFriends(true); }}
                   className="bg-gray-900 border border-gray-800 rounded-2xl p-4 mb-3 space-y-3"
                 >
+                  <input type="hidden" name="isPublic" value={shareWithFriends ? "true" : "false"} />
                   <div className="flex gap-2">
                     <div className="flex-1">
                       <label className="text-xs text-gray-500 mb-1 block">Profit / Loss ($)</label>
@@ -453,6 +466,16 @@ export default function DashboardClient({
                       className="w-full bg-gray-800 border border-gray-700 focus:border-blue-500 rounded-xl px-3 py-3 text-sm placeholder-gray-600 outline-none transition-colors"
                     />
                   </div>
+                  <div className="flex items-center justify-between py-0.5">
+                    <span className="text-xs text-gray-500">Share with friends</span>
+                    <button
+                      type="button"
+                      onClick={() => setShareWithFriends((v) => !v)}
+                      className={`relative w-10 h-5 rounded-full transition-colors ${shareWithFriends ? "bg-blue-500" : "bg-gray-700"}`}
+                    >
+                      <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform ${shareWithFriends ? "translate-x-5" : "translate-x-0"}`} />
+                    </button>
+                  </div>
                   <button
                     type="submit"
                     className="w-full bg-blue-600 active:bg-blue-500 text-white font-bold min-h-[48px] rounded-xl text-sm transition-colors"
@@ -476,6 +499,18 @@ export default function DashboardClient({
                         <span className={`text-lg font-bold tabular-nums ${e.profit >= 0 ? "text-green-400" : "text-red-400"}`}>
                           {e.profit >= 0 ? `+$${e.profit}` : `-$${Math.abs(e.profit)}`}
                         </span>
+                      </div>
+                      <div className="px-4 py-2 border-t border-gray-800/50 flex items-center justify-between">
+                        <span className="text-xs text-gray-600">
+                          {entryPublicState[e.id] ?? true ? "Shared with friends" : "Private"}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleTogglePublic(e.id)}
+                          className={`relative w-8 h-4 rounded-full transition-colors ${entryPublicState[e.id] ?? true ? "bg-blue-500" : "bg-gray-700"}`}
+                        >
+                          <span className={`absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full transition-transform ${entryPublicState[e.id] ?? true ? "translate-x-4" : "translate-x-0"}`} />
+                        </button>
                       </div>
                       {confirmDeleteEntry === e.id ? (
                         <div className="border-t border-gray-800 flex">

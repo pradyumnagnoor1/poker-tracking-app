@@ -137,7 +137,7 @@ export default async function Dashboard() {
   // Always fetch manual entries (even with no completed sessions)
   const { data: manualEntries } = await supabase
     .from("manual_game_entries")
-    .select("id, played_at, profit, notes")
+    .select("id, played_at, profit, notes, is_public")
     .eq("user_id", user.id);
 
   let statsRaw: Omit<SessionStat, "cumulative">[] = [];
@@ -178,12 +178,13 @@ export default async function Dashboard() {
   }
 
   const manualStatsRaw: Omit<SessionStat, "cumulative">[] = (manualEntries ?? []).map(
-    (e: { id: string; played_at: string; profit: number; notes: string | null }) => ({
+    (e: { id: string; played_at: string; profit: number; notes: string | null; is_public: boolean }) => ({
       id: e.id,
       title: e.notes || "Manual Entry",
       date: e.played_at,
       profit: Math.round(Number(e.profit) * 100) / 100,
       isManual: true,
+      isPublic: e.is_public ?? true,
     })
   );
 
