@@ -151,20 +151,17 @@ export async function getFriendsData(userId: string) {
       .eq("status", "pending"),
   ]);
 
-  const mappedFriendships: Friendship[] = (friendships ?? []).map((f: {
-    id: string;
-    requester_id: string;
-    addressee_id: string;
-    status: FriendshipStatus;
-    requester: { id: string; display_name: string; username: string };
-    addressee: { id: string; display_name: string; username: string };
-  }) => ({
-    id: f.id,
-    requester_id: f.requester_id,
-    addressee_id: f.addressee_id,
-    status: f.status,
-    other_user: f.requester_id === userId ? f.addressee : f.requester,
-  }));
+  const mappedFriendships: Friendship[] = (friendships ?? []).map((f) => {
+    const requester = Array.isArray(f.requester) ? f.requester[0] : f.requester;
+    const addressee = Array.isArray(f.addressee) ? f.addressee[0] : f.addressee;
+    return {
+      id: f.id,
+      requester_id: f.requester_id,
+      addressee_id: f.addressee_id,
+      status: f.status as FriendshipStatus,
+      other_user: f.requester_id === userId ? addressee : requester,
+    };
+  });
 
   return {
     friendships: mappedFriendships,
