@@ -165,6 +165,10 @@ export async function getFriendsData(userId: string) {
 
   return {
     friendships: mappedFriendships,
-    sessionInvites: (pendingInvites ?? []) as SessionInvite[],
+    sessionInvites: (pendingInvites ?? []).map((i) => ({
+      ...i,
+      sessions: Array.isArray(i.sessions) ? i.sessions[0] ?? null : i.sessions,
+      profiles: Array.isArray(i.profiles) ? i.profiles[0] ?? null : i.profiles,
+    })) as SessionInvite[],
   };
 }
