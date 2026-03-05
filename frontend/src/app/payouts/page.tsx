@@ -2,6 +2,7 @@ import { createClient } from "@/supabase/server";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import PayoutCard from "./PayoutCard";
+import PayoutsRealtimeListener from "./PayoutsRealtimeListener";
 
 type Payment = {
   id: string;
@@ -162,6 +163,7 @@ export default async function PayoutsPage() {
         </section>
 
       </div>
+      <PayoutsRealtimeListener userId={user.id} />
     </main>
   );
 }

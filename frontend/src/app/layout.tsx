@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import CapacitorAuthHandler from "./CapacitorAuthHandler";
+import PullToRefresh from "@/components/PullToRefresh";
 
 export const metadata: Metadata = {
   title: "StackLab",
@@ -22,7 +23,7 @@ export default function RootLayout({
     <html lang="en">
       <body className="bg-gray-950 text-white antialiased">
         <CapacitorAuthHandler />
-        {children}
+        <PullToRefresh>{children}</PullToRefresh>
       </body>
     </html>
   );
